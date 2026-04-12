@@ -1,5 +1,6 @@
 """Application services for GuiNmap."""
 
+from guinmap.application.scan_presets import ScanPreset, get_scan_preset, get_scan_presets
 from guinmap.application.scan_profile_validator import (
 	ScanProfileValidationError,
 	ScanProfileValidationResult,
@@ -14,6 +15,9 @@ __all__ = [
 	"ScanProfileValidationError",
 	"ScanProfileValidationResult",
 	"ScanProfileValidator",
+	"ScanPreset",
 	"ScanService",
 	"ValidationIssue",
+	"get_scan_preset",
+	"get_scan_presets",
 ]

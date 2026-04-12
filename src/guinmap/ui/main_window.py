@@ -26,10 +26,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from guinmap.application.scan_presets import ScanPreset, get_scan_presets
+
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
+        self._presets = get_scan_presets()
         self.setWindowTitle("GuiNmap")
         self.resize(1400, 860)
         self.setMinimumSize(1180, 760)
@@ -408,14 +411,7 @@ class MainWindow(QMainWindow):
         timing.addItems(["T3 Normal", "T4 Aggressive", "Custom tuning later"])
 
         profile = QComboBox()
-        profile.addItems(
-            [
-                "Quick discovery",
-                "Balanced TCP inventory",
-                "Service fingerprint",
-                "Deep assessment",
-            ]
-        )
+        profile.addItems([preset.label for preset in self._presets])
 
         form.addRow("Targets", target_input)
         form.addRow("Ports", ports_input)
@@ -481,27 +477,8 @@ class MainWindow(QMainWindow):
             "defaults instead of forcing every user to learn dozens of Nmap flags upfront.",
         )
 
-        layout.addWidget(
-            self._build_profile_card(
-                "Quick discovery",
-                "Map live hosts first with low friction and minimal noise.",
-                "-sn -PE -PS443 -PA80",
-            )
-        )
-        layout.addWidget(
-            self._build_profile_card(
-                "Balanced TCP inventory",
-                "Windows-friendly baseline for service inventory and reporting.",
-                "-sT -sV -T3 --reason",
-            )
-        )
-        layout.addWidget(
-            self._build_profile_card(
-                "Fast service fingerprint",
-                "Sharper TCP pass for responsive networks where speed matters.",
-                "-sS -sV -T4 --top-ports 100",
-            )
-        )
+        for preset in self._presets:
+            layout.addWidget(self._build_profile_card(preset))
 
         warning = QLabel(
             "Privileged modes will be capability-checked later so the GUI can fall "
@@ -513,7 +490,7 @@ class MainWindow(QMainWindow):
 
         return card
 
-    def _build_profile_card(self, title: str, body: str, command: str) -> QFrame:
+    def _build_profile_card(self, preset: ScanPreset) -> QFrame:
         card = QFrame()
         card.setObjectName("profileCard")
 
@@ -521,14 +498,14 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(6)
 
-        title_label = QLabel(title)
+        title_label = QLabel(preset.label)
         title_label.setStyleSheet("font-size: 16px; font-weight: 700; color: #0f172a;")
 
-        body_label = QLabel(body)
+        body_label = QLabel(preset.description)
         body_label.setWordWrap(True)
         body_label.setStyleSheet("font-size: 12px; color: #536578;")
 
-        command_label = QLabel(command)
+        command_label = QLabel(preset.command_preview)
         command_label.setStyleSheet(
             "font-family: Consolas; font-size: 12px; color: #0f5f59;"
             "background-color: #e4f4f1; border-radius: 8px; padding: 6px 8px;"

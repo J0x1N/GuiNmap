@@ -75,6 +75,8 @@ The initial profile strategy is:
 - Deep assessment later
 
 This keeps the beginner path clear while still mapping to real Nmap concepts.
+Preset definitions should live in the application layer so the UI consumes a
+shared source of truth rather than repeating hardcoded labels and commands.
 
 ### Execution
 
