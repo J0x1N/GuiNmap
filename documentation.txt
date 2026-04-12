@@ -1,0 +1,456 @@
+GuiNmap Local Nmap Reference
+============================
+
+Purpose
+-------
+This file stores a consolidated local reference for the project based on the
+official Nmap Reference Guide and its linked manual chapters.
+
+The goal is practical: keep the most relevant Nmap behavior, options, legal
+notes, and implementation guidance inside the repository so the GUI can be built
+against the official manual instead of memory or third-party blog posts.
+
+Attribution and license
+-----------------------
+Source material: Nmap Reference Guide and related manual pages from
+https://nmap.org/book/man.html and linked chapters.
+
+Copyright notice from the official guide:
+- The Nmap Reference Guide is Copyright 2005-2022 Nmap Software LLC.
+- The guide is published under the Creative Commons Attribution 3.0 license.
+
+This local file is a consolidated, attributed adaptation for study, design, and
+implementation planning inside GuiNmap. Credit remains with Nmap Software LLC
+and the Nmap Project.
+
+Primary source pages used
+-------------------------
+- https://nmap.org/book/man.html
+- https://nmap.org/book/man-briefoptions.html
+- https://nmap.org/book/man-target-specification.html
+- https://nmap.org/book/man-host-discovery.html
+- https://nmap.org/book/man-port-scanning-basics.html
+- https://nmap.org/book/man-port-scanning-techniques.html
+- https://nmap.org/book/man-port-specification.html
+- https://nmap.org/book/man-version-detection.html
+- https://nmap.org/book/man-os-detection.html
+- https://nmap.org/book/man-nse.html
+- https://nmap.org/book/man-performance.html
+- https://nmap.org/book/man-bypass-firewalls-ids.html
+- https://nmap.org/book/man-output.html
+- https://nmap.org/book/man-misc-options.html
+- https://nmap.org/book/man-runtime-interaction.html
+- https://nmap.org/book/man-examples.html
+- https://nmap.org/book/man-book.html
+- https://nmap.org/book/man-bugs.html
+- https://nmap.org/book/man-author.html
+- https://nmap.org/book/man-legal.html
+
+Manual overview
+---------------
+Nmap is a network exploration and security auditing tool. It can determine which
+hosts are online, what services and versions they expose, what operating systems
+they run, and what filtering behavior exists between scanner and target.
+
+Canonical syntax:
+  nmap [<Scan Type> ...] [<Options>] {<target specification>}
+
+The most important conceptual output is the interesting ports table. A GUI must
+understand these states correctly:
+- open: an application is listening
+- closed: reachable, but no service is listening
+- filtered: filtering prevents a reliable answer
+- unfiltered: reachable, but scan type cannot decide open vs closed
+- open|filtered: either open or filtered
+- closed|filtered: either closed or filtered
+
+1. Options summary
+------------------
+The official options summary is a memory aid, not a replacement for the full
+manual. It groups flags into:
+- target specification
+- host discovery
+- scan techniques
+- port selection and ordering
+- service and version detection
+- script scan
+- OS detection
+- timing and performance
+- firewall and IDS evasion
+- output
+- miscellaneous options
+
+For GuiNmap this implies that the UI should expose core paths first and keep the
+rest in advanced sections or profiles.
+
+2. Target specification
+-----------------------
+Nmap accepts:
+- hostnames
+- IPv4 addresses
+- IPv6 addresses
+- CIDR ranges
+- IPv4 octet ranges
+- lists of targets from files
+
+Key target options:
+- -iL <file>: read targets from a file
+- -iR <num>: choose random targets
+- --exclude / --excludefile: exclude hosts or networks
+- -n: never do reverse DNS
+- -R: always do reverse DNS
+- --resolve-all: scan every resolved address for a hostname
+- --unique: scan each IP only once
+- --system-dns: use the OS resolver instead of Nmap's parallel resolver
+- --dns-servers: provide custom DNS servers
+
+GuiNmap implication:
+- target input must support single hosts, ranges, and files later
+- DNS behavior should be exposed as advanced options, not the default path
+
+3. Host discovery
+-----------------
+If the user does not specify discovery options, Nmap uses a mix of probes such
+as ICMP echo, TCP SYN to 443, TCP ACK to 80, and ICMP timestamp. On local
+ethernet networks, ARP or IPv6 Neighbor Discovery is used automatically.
+
+Important discovery modes:
+- -sL: list targets only, no packets to targets
+- -sn: host discovery only, no port scan
+- -Pn: skip host discovery and treat all targets as online
+- -PS<ports>: TCP SYN discovery
+- -PA<ports>: TCP ACK discovery
+- -PU<ports>: UDP discovery
+- -PY<ports>: SCTP INIT discovery
+- -PE / -PP / -PM: ICMP echo, timestamp, and netmask discovery
+- -PO<protocols>: IP protocol ping
+- --disable-arp-ping: disable implicit ARP or ND discovery
+- --discovery-ignore-rst: ignore spoofed RST replies in discovery
+- --traceroute: trace the path to each host after scanning
+
+GuiNmap implication:
+- discovery should become its own panel or subsection
+- -sn and -Pn are not minor toggles; they change the whole workflow
+
+4. Port scanning basics
+-----------------------
+Nmap does not reduce ports to only open or closed. It uses the six-state model
+listed earlier because the observed network path matters.
+
+GuiNmap implication:
+- result views must preserve the exact Nmap state string
+- filters like "open only" should be optional presentation choices, not data loss
+
+5. Port scanning techniques
+---------------------------
+Nmap supports many scan methods. Important ones for the GUI roadmap:
+
+- -sS: TCP SYN scan, fast and popular, usually requires privileges
+- -sT: TCP connect scan, fallback when raw packets are unavailable
+- -sU: UDP scan, slower and often ambiguous because of rate limiting
+- -sN / -sF / -sX: NULL, FIN, Xmas scans
+- -sA: ACK scan for firewall mapping
+- -sW: Window scan
+- -sM: Maimon scan
+- --scanflags: custom TCP flags
+- -sY / -sZ: SCTP INIT / COOKIE-ECHO scans
+- -sI <zombie>: idle scan
+- -sO: IP protocol scan
+- -b <ftp relay>: FTP bounce scan
+
+Operational notes from the manual:
+- only one main scan method is usually chosen at a time
+- UDP can be combined with one TCP scan type
+- SYN scan is preferred when privileges exist
+- unprivileged users typically fall back to connect scan
+- Windows often benefits from administrator access and Npcap for stronger modes
+
+GuiNmap implication:
+- the early GUI should expose -sT, -sS, -sU, -sn, and -Pn first
+- advanced scans belong in an expert section with warnings
+
+6. Port specification and order
+-------------------------------
+Port control options:
+- -p <ranges>: explicit ports, ranges, named services, protocol-qualified lists
+- --exclude-ports <ranges>: skip ports
+- -F: fast mode, fewer ports than default
+- -r: sequential scan order
+- --top-ports <n>: scan the n most common ports
+- --port-ratio <ratio>: scan ports above a service-frequency threshold
+
+Nmap also supports protocol qualifiers inside -p:
+- T: TCP
+- U: UDP
+- S: SCTP
+- P: IP protocol numbers
+
+GuiNmap implication:
+- port entry should accept raw Nmap syntax, but helper widgets can generate it
+- top ports and fast mode are ideal preset controls
+
+7. Service and version detection
+--------------------------------
+Version detection interrogates discovered services to identify product, version,
+device type, OS family, and sometimes CPE values.
+
+Key options:
+- -sV: enable version detection
+- --allports: include ports normally excluded from version detection
+- --version-intensity <0-9>: set probe aggressiveness
+- --version-light: same as intensity 2
+- --version-all: same as intensity 9
+- --version-trace: detailed debugging output
+
+Important behavior:
+- version detection can turn some open|filtered ports into open when a service replies
+- Nmap uses the nmap-service-probes database to match responses
+
+GuiNmap implication:
+- -sV should be a first-class checkbox
+- intensity should be an advanced setting, not part of the primary flow
+
+8. OS detection
+---------------
+OS detection uses TCP/IP fingerprinting to infer vendor, family, generation,
+device type, and often a CPE.
+
+Key options:
+- -O: enable OS detection
+- --osscan-limit: try only on promising targets
+- --osscan-guess or --fuzzy: guess more aggressively
+- --max-os-tries: control retries
+
+Important behavior:
+- works best when at least one open and one closed port are found
+- may also provide uptime guesses and TCP sequence difficulty information
+
+GuiNmap implication:
+- OS detection needs clear warnings about privileges, time cost, and confidence
+
+9. Nmap Scripting Engine (NSE)
+------------------------------
+NSE lets Nmap run Lua scripts for discovery, service checks, vulnerability work,
+and automation. Some scripts are safe, some are intrusive, and some are outright
+dangerous.
+
+Key options:
+- -sC: run the default script set
+- --script <spec>: run scripts by file, category, directory, or expression
+- --script-args: pass arguments to scripts
+- --script-args-file: load arguments from a file
+- --script-help: show help for selected scripts
+- --script-trace: trace script network activity
+- --script-updatedb: rebuild the script database
+
+Important categories include:
+- default
+- safe
+- discovery
+- version
+- vuln
+- auth
+- intrusive
+- exploit
+- malware
+
+Manual warning:
+- scripts are not sandboxed
+- never run third-party scripts without trust or audit
+
+GuiNmap implication:
+- Phase 1 and 2 should not expose full NSE freedom in the main path
+- a later UI should separate safe/default scripts from risky categories
+
+10. Timing and performance
+--------------------------
+Nmap uses adaptive timing, but users can override many behaviors.
+
+Key performance options:
+- -T0 to -T5: timing templates from paranoid to insane
+- --min-hostgroup / --max-hostgroup
+- --min-parallelism / --max-parallelism
+- --min-rtt-timeout / --max-rtt-timeout / --initial-rtt-timeout
+- --max-retries
+- --host-timeout
+- --script-timeout
+- --scan-delay / --max-scan-delay
+- --min-rate / --max-rate
+- --defeat-rst-ratelimit
+- --defeat-icmp-ratelimit
+
+Practical guidance from the manual:
+- T3 is the default and conservative baseline
+- T4 is recommended on modern reliable networks
+- T5 is aggressive and can reduce accuracy
+- lowering retries or timeouts can improve speed but may lose fidelity
+- UDP scanning is especially vulnerable to rate limiting and long runtimes
+
+GuiNmap implication:
+- the basic UI should surface T3 and T4 first
+- advanced timing controls belong behind an expert drawer or advanced tab
+
+11. Firewall, IDS evasion, and spoofing
+---------------------------------------
+The manual documents many advanced options used to test defenses or alter how a
+scan appears on the network.
+
+Key options:
+- -f / --mtu: fragment packets
+- -D: decoys
+- -S: spoof source address
+- -e: choose interface
+- -g / --source-port: spoof source port
+- --data / --data-string / --data-length: append payload data
+- --ip-options: set IP options
+- --ttl: set TTL
+- --randomize-hosts: randomize target order
+- --spoof-mac: spoof MAC address
+- --proxies: chain proxies for some TCP-based phases
+- --badsum: bogus checksums
+- --adler32: legacy SCTP checksum mode
+
+Important caution:
+- many of these options are expert-level and easy to misuse
+- some do not affect all scan phases
+- several trade accuracy for stealth or speed
+
+GuiNmap implication:
+- these options should not be in the default experience
+- if exposed later, they need explicit warnings and contextual help
+
+12. Output and XML
+------------------
+Nmap supports several output formats:
+- interactive output to stdout
+- normal output (-oN)
+- XML output (-oX)
+- grepable output (-oG), deprecated
+- script kiddie output (-oS)
+- all formats at once (-oA)
+
+The manual is explicit: XML is the preferred format for non-trivial software
+integration. It is stable, extensible, machine-readable, and backed by a DTD.
+
+Other output controls:
+- -v / -vv / -v<level>: verbosity
+- -d / -dd / -d<level>: debugging
+- --reason: include reasons for states
+- --stats-every <time>: periodic runtime status messages
+- --packet-trace: trace packets
+- --open: show only open or possibly open ports
+- --append-output: append instead of overwrite
+- --resume <file>: resume aborted scan
+- --noninteractive: disable runtime keyboard interactions
+- --stylesheet / --webxml / --no-stylesheet: XML stylesheet behavior
+
+GuiNmap implication:
+- XML should be the canonical artifact for completed results
+- stdout or stderr should be treated as progress and diagnostics, not as the main data source
+- --stats-every is useful for progress UI
+- --reason should be enabled in advanced or detail-oriented profiles
+
+13. Miscellaneous options
+-------------------------
+Useful non-category options include:
+- -6: IPv6 scanning
+- -A: aggressive bundle that enables -O, -sV, -sC, and --traceroute
+- --datadir: custom Nmap data directory
+- --servicedb / --versiondb: custom data files
+- --send-eth / --send-ip: packet transmission level
+- --privileged / --unprivileged: force privilege assumptions
+- -V / --version: print version
+- -h / --help: print help summary
+
+GuiNmap implication:
+- -A should be presented carefully because it enables multiple intrusive and
+  expensive behaviors at once
+
+14. Runtime interaction
+-----------------------
+While Nmap runs in a terminal, it accepts live key presses:
+- v / V: raise or lower verbosity
+- d / D: raise or lower debugging
+- p / P: toggle packet trace
+- ?: print runtime help
+- any other key: print a status message
+
+GuiNmap implication:
+- the GUI should provide equivalent runtime controls through buttons or toggles
+- noninteractive mode may be useful for clean subprocess handling
+
+15. Examples from the manual
+----------------------------
+Representative examples include:
+- nmap -v scanme.nmap.org
+- nmap -sS -O scanme.nmap.org/24
+- nmap -sV -p 22,53,110,143,4564 198.116.0-255.1-127
+- nmap -v -iR 100000 -Pn -p 80
+- nmap -Pn -p80 -oX logs/pb-port80scan.xml -oG logs/pb-port80scan.gnmap 216.163.128.20/20
+
+The official scanme host exists for safe testing with limits. The manual asks
+users not to abuse it and not to run exploit or denial-of-service activity.
+
+16. Book, bugs, and authors
+---------------------------
+Nmap Book:
+- The manual references the official book "Nmap Network Scanning" for deeper,
+  real-world usage guidance, performance tuning, NSE automation, and firewall
+  evasion discussion.
+
+Bugs:
+- Users should first update to the latest Nmap release before reporting issues.
+- Bug reports can go to the issue tracker and dev mailing list.
+- Patches and pull requests are explicitly welcomed.
+- Sensitive security reports may be sent directly to Fyodor.
+
+Authors:
+- Nmap was written and released by Gordon "Fyodor" Lyon in 1997.
+- Many contributors have improved it over the years.
+
+17. Legal and safety notes
+--------------------------
+Important legal and operational points from the official manual:
+- Nmap itself is under the Nmap Public Source License, not plain GPL.
+- The Nmap Reference Guide is under CC BY 3.0.
+- Nmap may crash poorly written software or fragile network stacks in rare cases.
+- It should not be used without authorization.
+- It should not be installed with elevated setuid-style privilege hacks.
+- It is not intended for hazardous environments requiring fail-safe behavior.
+- Windows Npcap redistribution has separate restrictions.
+
+18. GuiNmap-specific implementation notes
+-----------------------------------------
+The official documentation strongly supports the following design choices for
+this project:
+
+- Use direct subprocess execution of the real Nmap binary.
+- Build argument lists, not shell strings.
+- Use shell=False.
+- Prefer XML output for all completed result parsing.
+- Treat normal or interactive output as supplemental diagnostics only.
+- Expose T3 and T4 before expert timing controls.
+- Surface Windows privilege and Npcap requirements clearly.
+- Start with a curated set of profiles before exposing expert scan types.
+- Preserve reasons, timestamps, and command provenance in the result model.
+
+Recommended first GUI feature set:
+- target entry
+- port selection
+- scan type selection
+- timing selection
+- service detection toggle
+- OS detection toggle
+- XML-backed results table
+- progress updates using --stats-every
+
+Recommended advanced feature set for later phases:
+- NSE category browser
+- profile persistence
+- report export
+- scan history
+- privileged capability checks
+- environment diagnostics
+- advanced timing and evasion controls
+
+End of local reference

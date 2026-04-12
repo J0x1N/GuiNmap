@@ -53,6 +53,24 @@ scan results.
 - Nmap command builder and XML parser skeleton
 - Architecture documentation and technical decisions
 
+## Phase 2 deliverables
+
+- Main window reorganized around the real product workflow
+- Structured scan builder shell for targets, scan type, timing, and advanced args
+- Profile cards, execution panel, results preview, and runtime console placeholders
+- UI system design notes for future implementation phases
+
+## Local documentation
+
+- `documentation.txt` stores a consolidated local reference based on the official
+	Nmap Reference Guide and related manual pages
+- `docs/architecture.md` records the technical architecture decisions
+- `docs/ui-system.md` records the UI structure and interaction decisions
+
+The Nmap Reference Guide itself is published by Nmap Software LLC under the
+Creative Commons Attribution 3.0 license, so the local reference file includes
+source attribution and licensing notes.
+
 ## Local prerequisites
 
 - Python 3.11 or newer
