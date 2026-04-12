@@ -66,6 +66,7 @@ scan results.
 	Nmap Reference Guide and related manual pages
 - `docs/architecture.md` records the technical architecture decisions
 - `docs/ui-system.md` records the UI structure and interaction decisions
+- `docs/testing.md` records how to validate the project after each phase
 
 The Nmap Reference Guide itself is published by Nmap Software LLC under the
 Creative Commons Attribution 3.0 license, so the local reference file includes
@@ -77,6 +78,18 @@ source attribution and licensing notes.
 - Nmap installed and available in `PATH`
 - On Windows, Npcap installed together with Nmap
 - Administrative privileges for scan modes that require raw packet access
+
+## How to test progress
+
+The project is being built in phases, so testing should also happen in layers.
+
+1. Run the unit suite with `pytest` to validate command building, XML parsing, and
+	the execution workflow with a fake Nmap binary.
+2. Launch the GUI with `python -m guinmap.main` to verify that the desktop shell
+	still loads correctly.
+3. When Nmap is installed, run a small real smoke test following `docs/testing.md`
+	to confirm that the execution service can invoke the system binary and parse
+	the resulting XML.
 
 ## Ethical and legal use
 

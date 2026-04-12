@@ -53,6 +53,8 @@ fallback such as TCP connect scan (`-sT`).
 src/guinmap/
   app.py
   main.py
+  application/
+    scan_service.py
   ui/
     main_window.py
   domain/
@@ -65,13 +67,13 @@ src/guinmap/
 
 ## Responsibility split
 
+- **application/** coordinates use cases such as launching scans and handling artifacts.
 - **ui/** contains widgets, windows, dialogs, and presentation logic.
 - **domain/** contains the core data structures the rest of the app works with.
 - **infrastructure/** contains Nmap process orchestration and XML parsing.
 
-If the application grows as expected, a later `application/` layer will sit
-between the UI and infrastructure to coordinate use cases such as starting scans,
-canceling them, persisting history, and exporting reports.
+The `application/` layer is now in place as the first thin orchestration layer
+between the UI and the infrastructure modules.
 
 ## Initial scan pipeline
 

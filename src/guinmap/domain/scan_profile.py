@@ -16,3 +16,9 @@ class ScanProfile:
     enable_os_detection: bool = False
     script_selection: list[str] = field(default_factory=list)
     extra_args: list[str] = field(default_factory=list)
+
+    def primary_target(self) -> str | None:
+        if not self.targets:
+            return None
+
+        return self.targets[0]
