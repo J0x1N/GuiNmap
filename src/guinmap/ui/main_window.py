@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -60,9 +61,14 @@ class MainWindow(QMainWindow):
 
         navigation = self._build_navigation()
         content = self._build_content()
+        content_scroll = QScrollArea()
+        content_scroll.setWidgetResizable(True)
+        content_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        content_scroll.setWidget(content)
 
         layout.addWidget(navigation)
-        layout.addWidget(content, stretch=1)
+        layout.addWidget(content_scroll, stretch=1)
 
         self.setCentralWidget(root)
         self.statusBar().showMessage("Phase 2: UI system and interaction shell")
@@ -102,6 +108,13 @@ class MainWindow(QMainWindow):
                 background-color: #ffffff;
                 border: 1px solid #d7e1ea;
                 border-radius: 16px;
+            }
+            QScrollArea {
+                background: transparent;
+                border: none;
+            }
+            QScrollArea > QWidget > QWidget {
+                background: transparent;
             }
             QFrame#profileCard {
                 background-color: #f7fbfe;
@@ -279,6 +292,7 @@ class MainWindow(QMainWindow):
 
     def _build_content(self) -> QWidget:
         container = QWidget()
+        container.setObjectName("contentViewport")
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(18)
@@ -302,7 +316,8 @@ class MainWindow(QMainWindow):
         lower_grid.setColumnStretch(1, 2)
 
         layout.addLayout(upper_grid)
-        layout.addLayout(lower_grid, 1)
+        layout.addLayout(lower_grid)
+        layout.addStretch(1)
 
         return container
 
@@ -419,8 +434,9 @@ class MainWindow(QMainWindow):
         form.addRow("Timing", timing)
         form.addRow("Preset profile", profile)
 
-        option_row = QHBoxLayout()
-        option_row.setSpacing(16)
+        option_grid = QGridLayout()
+        option_grid.setHorizontalSpacing(16)
+        option_grid.setVerticalSpacing(8)
 
         service_check = QCheckBox("Service detection (-sV)")
         service_check.setChecked(True)
@@ -428,28 +444,31 @@ class MainWindow(QMainWindow):
         default_scripts_check = QCheckBox("Default NSE (-sC)")
         traceroute_check = QCheckBox("Traceroute")
 
-        option_row.addWidget(service_check)
-        option_row.addWidget(os_check)
-        option_row.addWidget(default_scripts_check)
-        option_row.addWidget(traceroute_check)
-        option_row.addStretch(1)
+        option_grid.addWidget(service_check, 0, 0)
+        option_grid.addWidget(os_check, 0, 1)
+        option_grid.addWidget(default_scripts_check, 1, 0)
+        option_grid.addWidget(traceroute_check, 1, 1)
+        option_grid.setColumnStretch(0, 1)
+        option_grid.setColumnStretch(1, 1)
 
         advanced_args = QPlainTextEdit()
         advanced_args.setPlaceholderText(
             "Optional advanced args, one logical group per line. Example:\n"
             "--reason\n--stats-every 5s\n--open"
         )
-        advanced_args.setFixedHeight(96)
+        advanced_args.setMinimumHeight(96)
 
         command_preview = QPlainTextEdit()
         command_preview.setReadOnly(True)
-        command_preview.setFixedHeight(120)
+        command_preview.setMinimumHeight(110)
         command_preview.setPlainText(
-            "nmap -oX <temp file> --stats-every 5s -T4 -sT -sV --reason "
-            "-p 22,80,443 scanme.nmap.org"
+            "nmap -oX <temp file>\n"
+            "  --stats-every 5s -T4 -sT -sV --reason\n"
+            "  -p 22,80,443 scanme.nmap.org"
         )
 
         button_row = QHBoxLayout()
+        button_row.setSpacing(12)
         validate_button = QPushButton("Validate profile")
         preview_button = QPushButton("Preview command")
         preview_button.setObjectName("secondaryButton")
@@ -461,7 +480,7 @@ class MainWindow(QMainWindow):
         button_row.addStretch(1)
 
         layout.addLayout(form)
-        layout.addLayout(option_row)
+        layout.addLayout(option_grid)
         layout.addWidget(self._build_inline_label("Advanced arguments"))
         layout.addWidget(advanced_args)
         layout.addWidget(self._build_inline_label("Generated command preview"))
@@ -506,6 +525,7 @@ class MainWindow(QMainWindow):
         body_label.setStyleSheet("font-size: 12px; color: #536578;")
 
         command_label = QLabel(preset.command_preview)
+        command_label.setWordWrap(True)
         command_label.setStyleSheet(
             "font-family: Consolas; font-size: 12px; color: #0f5f59;"
             "background-color: #e4f4f1; border-radius: 8px; padding: 6px 8px;"
@@ -531,7 +551,7 @@ class MainWindow(QMainWindow):
 
         status_notes = QPlainTextEdit()
         status_notes.setReadOnly(True)
-        status_notes.setFixedHeight(136)
+        status_notes.setMinimumHeight(136)
         status_notes.setPlainText(
             "Execution flow\n"
             "1. Validate structured profile fields\n"
@@ -569,6 +589,7 @@ class MainWindow(QMainWindow):
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         table.setAlternatingRowColors(True)
+        table.setMinimumHeight(170)
 
         rows = [
             ["192.168.1.1", "tcp", "443", "open", "https"],
@@ -601,6 +622,7 @@ class MainWindow(QMainWindow):
 
         console = QPlainTextEdit()
         console.setReadOnly(True)
+        console.setMinimumHeight(180)
         console.setPlainText(
             "[phase-2] Local Nmap reference stored in documentation.txt\n"
             "[phase-2] XML remains the canonical result artifact\n"

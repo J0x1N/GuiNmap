@@ -27,6 +27,8 @@ pytest
 What this covers today:
 - command construction in `NmapExecutor`
 - XML parsing in `NmapXmlParser`
+- environment diagnostics and scan-type recommendations
+- JSON and Markdown report exporting from typed scan results
 - execution flow in `ScanService` using a fake Nmap binary
 
 This means you can validate the project logic even if Nmap is not installed yet.
@@ -57,6 +59,37 @@ What to check:
 - an XML file appears under `artifacts/scans`
 - at least one host is parsed into the result object
 
+### 5. Run an environment diagnostics smoke test
+
+This is useful even when Nmap is not installed yet.
+
+```powershell
+python -c "from guinmap.application.environment_diagnostics import EnvironmentDiagnosticsService; diagnostics = EnvironmentDiagnosticsService().inspect(); print(diagnostics.binary_available); print(diagnostics.recommended_scan_type); print([issue.message for issue in diagnostics.issues])"
+```
+
+What to check:
+- `binary_available` matches the real machine state
+- the recommended scan type is `connect` when raw-packet modes are not ready
+- the issue list is understandable and actionable
+
+### 6. Run a report export smoke test
+
+This now works even if you have not produced a real scan yet. The exporter will
+use the latest XML from `artifacts/scans` when available, and otherwise fall
+back to the bundled sample XML under `docs/examples`.
+
+```powershell
+python -c "from guinmap.application.report_exporter import ScanReportExporter; result = ScanReportExporter().export_latest_available(); print(result.source_xml_path); print(result.used_fallback_source); print(result.json_report_path); print(result.markdown_report_path)"
+```
+
+What to check:
+- the printed XML source path exists
+- `used_fallback_source` is `True` when no real scan XML exists yet
+- one `.json` file appears under `reports`
+- one `.md` file appears under `reports`
+- the Markdown report includes hosts, ports, and script output when present
+- the JSON report preserves nested fields from `ScanResult`
+
 ## What to test after each phase
 
 ### After architecture changes
@@ -75,6 +108,18 @@ What to check:
 - inspect generated XML under `artifacts/scans`
 - verify host, port, and service data matches the XML
 
+### After reporting or export changes
+
+- `pytest`
+- run the report export smoke test
+- inspect generated files under `reports`
+
+### After environment or hardening changes
+
+- `pytest`
+- run the environment diagnostics smoke test
+- verify the recommended scan type and warnings make sense for the current machine
+
 ### After UI bindings are added
 
 - `pytest`
@@ -87,4 +132,6 @@ What to check:
 - Does the XML file exist when the scan finishes?
 - Does a non-zero Nmap exit code produce a clear error?
 - Do parsed hosts and ports preserve exact Nmap states like `open|filtered`?
+- Do exported reports preserve the important scan metadata and nested result details?
+- Does environment diagnostics explain missing Nmap, privileges, or fallback behavior clearly?
 - Does the UI still open after backend changes?

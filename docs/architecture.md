@@ -54,6 +54,10 @@ src/guinmap/
   app.py
   main.py
   application/
+    environment_diagnostics.py
+    report_exporter.py
+    scan_presets.py
+    scan_profile_validator.py
     scan_service.py
   ui/
     main_window.py
@@ -67,7 +71,9 @@ src/guinmap/
 
 ## Responsibility split
 
-- **application/** coordinates use cases such as launching scans and handling artifacts.
+- **application/** coordinates use cases such as launching scans, validating profiles,
+  defining presets, exporting reports, checking environment capabilities, and
+  handling artifacts.
 - **ui/** contains widgets, windows, dialogs, and presentation logic.
 - **domain/** contains the core data structures the rest of the app works with.
 - **infrastructure/** contains Nmap process orchestration and XML parsing.

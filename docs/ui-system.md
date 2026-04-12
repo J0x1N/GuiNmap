@@ -88,6 +88,9 @@ The execution area needs to carry three responsibilities:
 
 This is especially important on Windows because some scan modes depend on raw
 packet privileges and Npcap.
+Environment diagnostics should come from the application layer so the UI can
+show actionable warnings before a scan starts, instead of discovering basic
+environment problems only after subprocess launch fails.
 
 ### Results
 
