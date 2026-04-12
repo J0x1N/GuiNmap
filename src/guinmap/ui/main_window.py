@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Slot
 from PySide6.QtGui import QAction
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QFrame,
     QGridLayout,
@@ -32,10 +34,14 @@ from PySide6.QtWidgets import (
 from guinmap.application import (
     EnvironmentDiagnostics,
     EnvironmentDiagnosticsService,
+    LoadedScanResult,
     ScanExecution,
     ScanPreset,
     ScanProfileBuilder,
     ScanProfileDraft,
+    ScanReportExporter,
+    ScanReportExportResult,
+    ScanResultLoader,
     ScanService,
     get_scan_presets,
 )
@@ -68,6 +74,8 @@ class MainWindow(QMainWindow):
         scan_service: ScanService | None = None,
         diagnostics_service: EnvironmentDiagnosticsService | None = None,
         profile_builder: ScanProfileBuilder | None = None,
+        result_loader: ScanResultLoader | None = None,
+        report_exporter: ScanReportExporter | None = None,
     ) -> None:
         super().__init__()
         self._presets = get_scan_presets()
@@ -78,10 +86,16 @@ class MainWindow(QMainWindow):
             else diagnostics_service
         )
         self._profile_builder = ScanProfileBuilder() if profile_builder is None else profile_builder
+        self._result_loader = ScanResultLoader() if result_loader is None else result_loader
+        self._report_exporter = (
+            ScanReportExporter() if report_exporter is None else report_exporter
+        )
         self._diagnostics: EnvironmentDiagnostics | None = None
         self._current_profile: ScanProfile | None = None
         self._latest_execution: ScanExecution | None = None
         self._latest_result: ScanResult | None = None
+        self._current_result_source_xml: Path | None = None
+        self._last_report_export: ScanReportExportResult | None = None
         self._scan_thread: QThread | None = None
         self._scan_worker: ScanWorker | None = None
         self._syncing_form = False
@@ -89,8 +103,8 @@ class MainWindow(QMainWindow):
         self._create_widgets()
 
         self.setWindowTitle("GuiNmap")
-        self.resize(1400, 900)
-        self.setMinimumSize(1200, 780)
+        self.resize(1460, 980)
+        self.setMinimumSize(1240, 820)
         self._configure_actions()
         self._configure_window()
         self._connect_signals()
@@ -99,7 +113,11 @@ class MainWindow(QMainWindow):
             self._apply_preset(self._presets[0])
 
         self._refresh_environment_diagnostics(log_to_console=True)
-        self._preview_command(show_feedback=False)
+        self._set_status_notes(
+            "Define targets and choose the Nmap option families you need. The command preview "
+            "will update after validation or explicit preview."
+        )
+        self._update_result_action_buttons()
 
     def _create_widgets(self) -> None:
         self._scan_name_input = QLineEdit()
@@ -132,11 +150,10 @@ class MainWindow(QMainWindow):
 
         self._advanced_args_edit = QPlainTextEdit()
         self._advanced_args_edit.setPlaceholderText(
-            "One logical group per line. Examples:\n"
+            "Cross-family exact arguments. Examples:\n"
             "-sA\n"
-            "--script vuln and safe\n"
-            "--script-args unsafe=1\n"
-            "-Pn --reason --top-ports 100"
+            "--spoof-mac Cisco\n"
+            "-oA reports/internal-edge"
         )
         self._advanced_args_edit.setMinimumHeight(110)
 
@@ -165,6 +182,77 @@ class MainWindow(QMainWindow):
         self._refresh_environment_button = QPushButton("Refresh environment")
         self._refresh_environment_button.setObjectName("secondaryButton")
 
+        self._skip_host_discovery_check = QCheckBox("Skip host discovery (-Pn)")
+        self._disable_dns_resolution_check = QCheckBox("Disable DNS resolution (-n)")
+        self._host_discovery_args_edit = self._create_family_args_editor(
+            "Examples:\n-PE\n-PS80,443\n-PA3389\n-PU53"
+        )
+
+        self._top_ports_input = QLineEdit()
+        self._top_ports_input.setPlaceholderText("100")
+        self._exclude_ports_input = QLineEdit()
+        self._exclude_ports_input.setPlaceholderText("135,139,445")
+        self._port_strategy_args_edit = self._create_family_args_editor(
+            "Examples:\n-sA\n-sW\n-sN\n-sF\n-sX\n-sI zombie:probe"
+        )
+
+        self._script_expression_input = QLineEdit()
+        self._script_expression_input.setPlaceholderText("safe and vuln")
+        self._script_arguments_input = QLineEdit()
+        self._script_arguments_input.setPlaceholderText("unsafe=1,user=demo")
+        self._nse_args_edit = self._create_family_args_editor(
+            "Examples:\n--script-help default\n--script-trace"
+        )
+
+        self._decoys_input = QLineEdit()
+        self._decoys_input.setPlaceholderText("ME,10.0.0.5,10.0.0.6")
+        self._source_port_input = QLineEdit()
+        self._source_port_input.setPlaceholderText("53")
+        self._evasion_args_edit = self._create_family_args_editor(
+            "Examples:\n-f\n--mtu 24\n-S 10.0.0.50\n--spoof-mac Cisco"
+        )
+
+        self._min_rate_input = QLineEdit()
+        self._min_rate_input.setPlaceholderText("300")
+        self._max_rate_input = QLineEdit()
+        self._max_rate_input.setPlaceholderText("1000")
+        self._host_timeout_input = QLineEdit()
+        self._host_timeout_input.setPlaceholderText("30s")
+        self._stats_interval_input = QLineEdit()
+        self._stats_interval_input.setPlaceholderText("2s")
+        self._performance_args_edit = self._create_family_args_editor(
+            "Examples:\n--min-hostgroup 16\n--max-retries 2\n--defeat-rst-ratelimit"
+        )
+
+        self._normal_output_path_input = QLineEdit()
+        self._normal_output_path_input.setPlaceholderText("reports/internal-edge.nmap")
+        self._grepable_output_path_input = QLineEdit()
+        self._grepable_output_path_input.setPlaceholderText("reports/internal-edge.gnmap")
+        self._verbose_output_check = QCheckBox("Verbose output (-v)")
+        self._packet_trace_check = QCheckBox("Packet trace (--packet-trace)")
+        self._output_args_edit = self._create_family_args_editor(
+            "Examples:\n--append-output\n-oA reports/internal-edge\n-d2"
+        )
+
+        self._load_xml_button = QPushButton("Load XML file")
+        self._load_xml_button.setObjectName("secondaryButton")
+        self._load_latest_xml_button = QPushButton("Load latest XML")
+        self._load_latest_xml_button.setObjectName("secondaryButton")
+        self._export_current_button = QPushButton("Export current reports")
+        self._export_current_button.setObjectName("secondaryButton")
+        self._export_latest_button = QPushButton("Export latest available")
+        self._export_latest_button.setObjectName("secondaryButton")
+
+        self._artifact_status_label = QLabel("No XML artifact loaded yet.")
+        self._artifact_status_label.setWordWrap(True)
+        self._artifact_status_label.setStyleSheet("font-size: 12px; color: #64748b;")
+
+        self._report_status_label = QLabel(
+            "Reports will be written under the reports directory when exported."
+        )
+        self._report_status_label.setWordWrap(True)
+        self._report_status_label.setStyleSheet("font-size: 12px; color: #64748b;")
+
         self._results_table = QTableWidget(0, 6)
         self._results_table.setHorizontalHeaderLabels(
             ["Host", "Host state", "Proto", "Port", "Port state", "Service"]
@@ -178,28 +266,28 @@ class MainWindow(QMainWindow):
             QAbstractItemView.SelectionBehavior.SelectRows
         )
         self._results_table.setAlternatingRowColors(True)
-        self._results_table.setMinimumHeight(200)
+        self._results_table.setMinimumHeight(240)
 
         self._results_note = QLabel(
-            "Run a scan or load a later XML artifact to populate typed host and port data."
+            "Run or load a scan to populate typed host and port data from XML."
         )
         self._results_note.setWordWrap(True)
         self._results_note.setStyleSheet("font-size: 12px; color: #64748b;")
 
         self._console = QPlainTextEdit()
         self._console.setReadOnly(True)
-        self._console.setMinimumHeight(210)
+        self._console.setMinimumHeight(220)
         self._console.setPlainText(
             "[startup] GuiNmap initialized\n"
-            "[startup] Structured fields cover common workflows\n"
-            "[startup] Advanced arguments pass through to Nmap for full option coverage"
+            "[startup] Common workflows use structured controls\n"
+            "[startup] Family editors preserve coverage for broader Nmap combinations"
         )
 
     def _configure_actions(self) -> None:
         exit_action = QAction("Exit", self)
         exit_action.triggered.connect(self.close)
 
-        about_phase_action = QAction("Phase 3 Overview", self)
+        about_phase_action = QAction("Phase 4 Overview", self)
         about_phase_action.setEnabled(False)
 
         file_menu = self.menuBar().addMenu("File")
@@ -226,7 +314,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(content_scroll, stretch=1)
 
         self.setCentralWidget(root)
-        self.statusBar().showMessage("Phase 3: background execution and diagnostics")
+        self.statusBar().showMessage("Phase 4: option families and artifact actions")
         self.setStyleSheet(
             """
             QMainWindow {
@@ -385,6 +473,10 @@ class MainWindow(QMainWindow):
         self._preview_button.clicked.connect(self._handle_preview_clicked)
         self._run_button.clicked.connect(self._run_scan)
         self._refresh_environment_button.clicked.connect(self._handle_refresh_environment)
+        self._load_xml_button.clicked.connect(self._handle_load_xml_clicked)
+        self._load_latest_xml_button.clicked.connect(self._handle_load_latest_xml_clicked)
+        self._export_current_button.clicked.connect(self._handle_export_current_clicked)
+        self._export_latest_button.clicked.connect(self._handle_export_latest_clicked)
 
     def _build_navigation(self) -> QFrame:
         panel = QFrame()
@@ -402,7 +494,7 @@ class MainWindow(QMainWindow):
         subtitle.setWordWrap(True)
         subtitle.setStyleSheet("font-size: 13px; color: #94a3b8;")
 
-        phase = QLabel("Current phase\nExecution wiring and diagnostics")
+        phase = QLabel("Current phase\nFamilies, artifacts, and live execution")
         phase.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         phase.setStyleSheet(
             "background-color: rgba(15, 118, 110, 0.28);"
@@ -429,7 +521,7 @@ class MainWindow(QMainWindow):
             [
                 "Overview",
                 "Scan Builder",
-                "Profiles",
+                "Nmap Families",
                 "Execution",
                 "Results",
                 "Documentation",
@@ -438,8 +530,8 @@ class MainWindow(QMainWindow):
         sections.setCurrentRow(1)
 
         footer = QLabel(
-            "Advanced arguments keep the GUI compatible with the broader Nmap surface, "
-            "while diagnostics highlight Windows capability limits before launch."
+            "Common tasks stay guided, but the family editors and passthrough fields let the "
+            "GUI represent much broader Nmap combinations without dropping to a raw shell."
         )
         footer.setWordWrap(True)
         footer.setStyleSheet("font-size: 12px; color: #94a3b8;")
@@ -479,6 +571,7 @@ class MainWindow(QMainWindow):
         lower_grid.setColumnStretch(1, 2)
 
         layout.addLayout(upper_grid)
+        layout.addWidget(self._build_option_families_panel())
         layout.addLayout(lower_grid)
         layout.addStretch(1)
 
@@ -495,28 +588,28 @@ class MainWindow(QMainWindow):
         left_column = QVBoxLayout()
         left_column.setSpacing(12)
 
-        badge = QLabel("PHASE 3")
+        badge = QLabel("PHASE 4")
         badge.setObjectName("badge")
 
-        title = QLabel("Real execution and diagnostics wired around the Nmap workflow")
+        title = QLabel("Broader Nmap coverage and XML artifact actions inside the GUI")
         title.setObjectName("heroTitle")
         title.setWordWrap(True)
 
         body = QLabel(
-            "The window now validates scan profiles, previews the exact command, runs "
-            "Nmap in the background, and renders typed results parsed from XML artifacts."
+            "The window now combines structured execution, grouped Nmap option families, XML "
+            "artifact loading, and report exporting without leaving the desktop workflow."
         )
         body.setObjectName("heroBody")
         body.setWordWrap(True)
 
         actions = QHBoxLayout()
-        execution_button = QPushButton("Background execution wired")
-        execution_button.setEnabled(False)
-        diagnostics_button = QPushButton("Diagnostics active")
-        diagnostics_button.setObjectName("secondaryButton")
-        diagnostics_button.setEnabled(False)
-        actions.addWidget(execution_button)
-        actions.addWidget(diagnostics_button)
+        families_button = QPushButton("Families organized")
+        families_button.setEnabled(False)
+        artifact_button = QPushButton("Artifact actions ready")
+        artifact_button.setObjectName("secondaryButton")
+        artifact_button.setEnabled(False)
+        actions.addWidget(families_button)
+        actions.addWidget(artifact_button)
         actions.addStretch(1)
 
         left_column.addWidget(badge)
@@ -527,10 +620,10 @@ class MainWindow(QMainWindow):
         metrics = QGridLayout()
         metrics.setHorizontalSpacing(20)
         metrics.setVerticalSpacing(14)
-        metrics.addWidget(self._build_metric_tile("XML", "Canonical result source"), 0, 0)
-        metrics.addWidget(self._build_metric_tile("Live", "Background execution"), 0, 1)
-        metrics.addWidget(self._build_metric_tile("T0-T5", "Full timing templates"), 1, 0)
-        metrics.addWidget(self._build_metric_tile("Args", "Full Nmap passthrough"), 1, 1)
+        metrics.addWidget(self._build_metric_tile("Families", "Nmap option groups"), 0, 0)
+        metrics.addWidget(self._build_metric_tile("XML", "Load or run artifacts"), 0, 1)
+        metrics.addWidget(self._build_metric_tile("Reports", "JSON + Markdown export"), 1, 0)
+        metrics.addWidget(self._build_metric_tile("Live", "Background execution"), 1, 1)
 
         layout.addLayout(left_column, 3)
         layout.addLayout(metrics, 2)
@@ -560,8 +653,9 @@ class MainWindow(QMainWindow):
     def _build_scan_builder_panel(self) -> QFrame:
         card, layout = self._create_section_card(
             "Scan Builder",
-            "Structured controls cover the common path. Advanced arguments remain a direct "
-            "escape hatch for the full Nmap option surface when you need rare combinations.",
+            "This remains the guided path for the most common workflows. Use the family editors "
+            "below when you need broader scan techniques, NSE variants, evasion, output, or "
+            "performance tuning.",
         )
 
         form = QFormLayout()
@@ -585,9 +679,9 @@ class MainWindow(QMainWindow):
         option_grid.setColumnStretch(1, 1)
 
         capability_hint = QLabel(
-            "To express rarer scan types such as -sA, -sW, idle scan workflows, custom "
-            "script expressions, or uncommon host-discovery combinations, keep the scan type "
-            "on 'Nmap default behavior' and pass the exact flags below."
+            "When a dedicated control is not present, you still have complete reach through the "
+            "family editors and the cross-family passthrough area. GuiNmap keeps XML under its "
+            "own control, so avoid passing -oX manually."
         )
         capability_hint.setWordWrap(True)
         capability_hint.setStyleSheet("font-size: 12px; color: #64748b;")
@@ -602,7 +696,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(form)
         layout.addLayout(option_grid)
         layout.addWidget(capability_hint)
-        layout.addWidget(self._build_inline_label("Advanced arguments"))
+        layout.addWidget(self._build_inline_label("Cross-family passthrough arguments"))
         layout.addWidget(self._advanced_args_edit)
         layout.addWidget(self._build_inline_label("Generated command preview"))
         layout.addWidget(self._command_preview)
@@ -613,16 +707,16 @@ class MainWindow(QMainWindow):
     def _build_profiles_panel(self) -> QFrame:
         card, layout = self._create_section_card(
             "Profiles",
-            "Presets remain starting points, not limits. Apply one as a baseline and then "
-            "extend or override it with the full Nmap flag surface through advanced arguments.",
+            "Presets stay useful as baselines. You can apply one, then use the families panel to "
+            "expand into more specialized Nmap combinations without starting from scratch.",
         )
 
         for preset in self._presets:
             layout.addWidget(self._build_profile_card(preset))
 
         warning = QLabel(
-            "Capability warnings are surfaced before launch so advanced scans do not fail as "
-            "opaque surprises on Windows or in non-privileged sessions."
+            "Capability warnings surface before launch, but explicit advanced combinations stay "
+            "possible when you intentionally choose them."
         )
         warning.setWordWrap(True)
         warning.setStyleSheet("font-size: 12px; color: #64748b;")
@@ -661,8 +755,8 @@ class MainWindow(QMainWindow):
     def _build_execution_panel(self) -> QFrame:
         card, layout = self._create_section_card(
             "Execution model",
-            "Scans now run in a background worker. The UI remains responsive while process "
-            "output streams into the runtime console and XML results are parsed at completion.",
+            "Scans run in a background worker. You can also load existing XML artifacts and export "
+            "reports from the current or latest available result set.",
         )
 
         button_row = QHBoxLayout()
@@ -676,13 +770,165 @@ class MainWindow(QMainWindow):
 
         return card
 
-    def _build_results_panel(self) -> QFrame:
+    def _build_option_families_panel(self) -> QFrame:
         card, layout = self._create_section_card(
-            "Results preview",
-            "Completed scans populate this view from typed XML models instead of brittle parsing "
-            "of interactive terminal text.",
+            "Nmap Option Families",
+            "These grouped editors keep the GUI organized while still letting you express much "
+            "broader Nmap behavior. Each family offers a few guided fields plus exact family "
+            "arguments for the remaining surface area.",
         )
 
+        families_grid = QGridLayout()
+        families_grid.setHorizontalSpacing(16)
+        families_grid.setVerticalSpacing(16)
+        families_grid.addWidget(self._build_host_discovery_family_card(), 0, 0)
+        families_grid.addWidget(self._build_scan_variants_family_card(), 0, 1)
+        families_grid.addWidget(self._build_nse_family_card(), 0, 2)
+        families_grid.addWidget(self._build_evasion_family_card(), 1, 0)
+        families_grid.addWidget(self._build_performance_family_card(), 1, 1)
+        families_grid.addWidget(self._build_output_family_card(), 1, 2)
+
+        for column in range(3):
+            families_grid.setColumnStretch(column, 1)
+
+        layout.addLayout(families_grid)
+        return card
+
+    def _build_host_discovery_family_card(self) -> QFrame:
+        card, layout = self._create_family_card(
+            "Host discovery",
+            "Control how Nmap decides whether a host is alive before deeper work begins.",
+        )
+
+        toggles = QGridLayout()
+        toggles.setHorizontalSpacing(12)
+        toggles.setVerticalSpacing(6)
+        toggles.addWidget(self._skip_host_discovery_check, 0, 0)
+        toggles.addWidget(self._disable_dns_resolution_check, 0, 1)
+
+        layout.addLayout(toggles)
+        layout.addWidget(self._build_inline_label("Exact host-discovery arguments"))
+        layout.addWidget(self._host_discovery_args_edit)
+        return card
+
+    def _build_scan_variants_family_card(self) -> QFrame:
+        card, layout = self._create_family_card(
+            "Scan variants and ports",
+            "Use this family for ACK, Window, Maimon, Null/FIN/Xmas, idle scans, and other port "
+            "selection strategies that go beyond the base scan-type combo.",
+        )
+
+        form = QFormLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.addRow("Top ports", self._top_ports_input)
+        form.addRow("Exclude ports", self._exclude_ports_input)
+
+        layout.addLayout(form)
+        layout.addWidget(self._build_inline_label("Exact scan/port arguments"))
+        layout.addWidget(self._port_strategy_args_edit)
+        return card
+
+    def _build_nse_family_card(self) -> QFrame:
+        card, layout = self._create_family_card(
+            "NSE and scripts",
+            "Combine script categories, named scripts, and script arguments without leaving the "
+            "GUI workflow.",
+        )
+
+        form = QFormLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.addRow("Script expression", self._script_expression_input)
+        form.addRow("Script args", self._script_arguments_input)
+
+        layout.addLayout(form)
+        layout.addWidget(self._build_inline_label("Exact NSE arguments"))
+        layout.addWidget(self._nse_args_edit)
+        return card
+
+    def _build_evasion_family_card(self) -> QFrame:
+        card, layout = self._create_family_card(
+            "Evasion and spoofing",
+            "Express decoys, source-port manipulation, packet fragmentation, spoofing, and related "
+            "operator-controlled evasive behavior.",
+        )
+
+        form = QFormLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.addRow("Decoys (-D)", self._decoys_input)
+        form.addRow("Source port", self._source_port_input)
+
+        layout.addLayout(form)
+        layout.addWidget(self._build_inline_label("Exact evasion arguments"))
+        layout.addWidget(self._evasion_args_edit)
+        return card
+
+    def _build_performance_family_card(self) -> QFrame:
+        card, layout = self._create_family_card(
+            "Performance",
+            "Fine-tune rates, timeouts, and batching when you need behavior beyond the timing "
+            "template selector.",
+        )
+
+        form = QFormLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.addRow("Min rate", self._min_rate_input)
+        form.addRow("Max rate", self._max_rate_input)
+        form.addRow("Host timeout", self._host_timeout_input)
+        form.addRow("Stats interval", self._stats_interval_input)
+
+        layout.addLayout(form)
+        layout.addWidget(self._build_inline_label("Exact performance arguments"))
+        layout.addWidget(self._performance_args_edit)
+        return card
+
+    def _build_output_family_card(self) -> QFrame:
+        card, layout = self._create_family_card(
+            "Output and verbosity",
+            "Keep XML under GuiNmap control while still allowing normal output, grepable output, "
+            "verbosity, and broader reporting or debug flags.",
+        )
+
+        toggles = QGridLayout()
+        toggles.setHorizontalSpacing(12)
+        toggles.setVerticalSpacing(6)
+        toggles.addWidget(self._verbose_output_check, 0, 0)
+        toggles.addWidget(self._packet_trace_check, 0, 1)
+
+        form = QFormLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.addRow("Normal output (-oN)", self._normal_output_path_input)
+        form.addRow("Grepable output (-oG)", self._grepable_output_path_input)
+
+        layout.addLayout(toggles)
+        layout.addLayout(form)
+        layout.addWidget(self._build_inline_label("Exact output arguments"))
+        layout.addWidget(self._output_args_edit)
+        return card
+
+    def _build_results_panel(self) -> QFrame:
+        card, layout = self._create_section_card(
+            "Results and artifacts",
+            "This area can render the current live result, load an existing XML artifact from "
+            "disk, "
+            "or export JSON and Markdown reports from the active result set.",
+        )
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(10)
+        button_row.addWidget(self._load_xml_button)
+        button_row.addWidget(self._load_latest_xml_button)
+        button_row.addWidget(self._export_current_button)
+        button_row.addWidget(self._export_latest_button)
+        button_row.addStretch(1)
+
+        layout.addLayout(button_row)
+        layout.addWidget(self._artifact_status_label)
+        layout.addWidget(self._report_status_label)
         layout.addWidget(self._results_table)
         layout.addWidget(self._results_note)
 
@@ -691,12 +937,11 @@ class MainWindow(QMainWindow):
     def _build_console_panel(self) -> QFrame:
         card, layout = self._create_section_card(
             "Runtime console",
-            "Diagnostics, command previews, Nmap output, and XML parsing milestones all feed into "
-            "this operator-friendly timeline.",
+            "Diagnostics, preview updates, Nmap output, XML loads, and report exports all appear "
+            "in this operator-facing timeline.",
         )
 
         layout.addWidget(self._console)
-
         return card
 
     def _create_section_card(self, title: str, body: str) -> tuple[QFrame, QVBoxLayout]:
@@ -719,10 +964,36 @@ class MainWindow(QMainWindow):
 
         return card, layout
 
+    def _create_family_card(self, title: str, body: str) -> tuple[QFrame, QVBoxLayout]:
+        card = QFrame()
+        card.setObjectName("profileCard")
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        title_label = QLabel(title)
+        title_label.setStyleSheet("font-size: 15px; font-weight: 700; color: #0f172a;")
+
+        body_label = QLabel(body)
+        body_label.setWordWrap(True)
+        body_label.setStyleSheet("font-size: 12px; color: #536578;")
+
+        layout.addWidget(title_label)
+        layout.addWidget(body_label)
+
+        return card, layout
+
     def _build_inline_label(self, text: str) -> QLabel:
         label = QLabel(text)
         label.setStyleSheet("font-size: 12px; font-weight: 600; color: #334155;")
         return label
+
+    def _create_family_args_editor(self, placeholder: str) -> QPlainTextEdit:
+        editor = QPlainTextEdit()
+        editor.setPlaceholderText(placeholder)
+        editor.setMinimumHeight(86)
+        return editor
 
     @Slot()
     def _handle_preset_changed(self) -> None:
@@ -749,19 +1020,44 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _handle_preview_clicked(self) -> None:
-        profile = self._validate_profile(show_feedback=False)
+        profile = self._validate_profile(show_feedback=True)
         if profile is None:
             return
 
         self.statusBar().showMessage("Command preview updated.", 5000)
         self._append_console_line("[preview] Command preview refreshed")
-        self._set_status_notes(self._build_ready_summary(profile))
 
     @Slot()
     def _handle_refresh_environment(self) -> None:
         self._refresh_environment_diagnostics(log_to_console=True)
         self._preview_command(show_feedback=False)
         self.statusBar().showMessage("Environment diagnostics refreshed.", 5000)
+
+    @Slot()
+    def _handle_load_xml_clicked(self) -> None:
+        start_dir = str(self._scan_service.artifacts_dir)
+        selected_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load Nmap XML artifact",
+            start_dir,
+            "Nmap XML (*.xml);;XML files (*.xml);;All files (*)",
+        )
+        if not selected_path:
+            return
+
+        self._load_xml_artifact(Path(selected_path), log_to_console=True)
+
+    @Slot()
+    def _handle_load_latest_xml_clicked(self) -> None:
+        self._load_latest_available_xml(log_to_console=True)
+
+    @Slot()
+    def _handle_export_current_clicked(self) -> None:
+        self._export_current_reports(log_to_console=True)
+
+    @Slot()
+    def _handle_export_latest_clicked(self) -> None:
+        self._export_latest_available_reports(log_to_console=True)
 
     def _preview_command(self, *, show_feedback: bool) -> ScanProfile | None:
         return self._validate_profile(show_feedback=show_feedback)
@@ -778,11 +1074,36 @@ class MainWindow(QMainWindow):
         self._default_scripts_check.setChecked("default" in preset.script_selection)
         self._traceroute_check.setChecked("--traceroute" in preset.extra_args)
 
-        advanced_args = [argument for argument in preset.extra_args if argument != "--traceroute"]
+        self._reset_family_inputs()
+        advanced_args = [arg for arg in preset.extra_args if arg != "--traceroute"]
         self._advanced_args_edit.setPlainText(" ".join(advanced_args))
 
         self._syncing_form = False
         self._sync_scan_type_controls()
+
+    def _reset_family_inputs(self) -> None:
+        self._skip_host_discovery_check.setChecked(False)
+        self._disable_dns_resolution_check.setChecked(False)
+        self._host_discovery_args_edit.clear()
+        self._top_ports_input.clear()
+        self._exclude_ports_input.clear()
+        self._port_strategy_args_edit.clear()
+        self._script_expression_input.clear()
+        self._script_arguments_input.clear()
+        self._nse_args_edit.clear()
+        self._decoys_input.clear()
+        self._source_port_input.clear()
+        self._evasion_args_edit.clear()
+        self._min_rate_input.clear()
+        self._max_rate_input.clear()
+        self._host_timeout_input.clear()
+        self._stats_interval_input.clear()
+        self._performance_args_edit.clear()
+        self._normal_output_path_input.clear()
+        self._grepable_output_path_input.clear()
+        self._verbose_output_check.setChecked(False)
+        self._packet_trace_check.setChecked(False)
+        self._output_args_edit.clear()
 
     def _selected_preset(self) -> ScanPreset | None:
         preset_key = self._preset_combo.currentData()
@@ -833,6 +1154,28 @@ class MainWindow(QMainWindow):
             enable_os_detection=self._os_check.isChecked(),
             enable_default_scripts=self._default_scripts_check.isChecked(),
             enable_traceroute=self._traceroute_check.isChecked(),
+            skip_host_discovery=self._skip_host_discovery_check.isChecked(),
+            disable_dns_resolution=self._disable_dns_resolution_check.isChecked(),
+            top_ports_text=self._top_ports_input.text(),
+            exclude_ports_text=self._exclude_ports_input.text(),
+            script_expression=self._script_expression_input.text(),
+            script_arguments_text=self._script_arguments_input.text(),
+            decoys_text=self._decoys_input.text(),
+            source_port_text=self._source_port_input.text(),
+            min_rate_text=self._min_rate_input.text(),
+            max_rate_text=self._max_rate_input.text(),
+            host_timeout_text=self._host_timeout_input.text(),
+            stats_interval_text=self._stats_interval_input.text(),
+            normal_output_path=self._normal_output_path_input.text(),
+            grepable_output_path=self._grepable_output_path_input.text(),
+            enable_verbose_output=self._verbose_output_check.isChecked(),
+            enable_packet_trace=self._packet_trace_check.isChecked(),
+            host_discovery_args_text=self._host_discovery_args_edit.toPlainText(),
+            port_strategy_args_text=self._port_strategy_args_edit.toPlainText(),
+            nse_args_text=self._nse_args_edit.toPlainText(),
+            evasion_args_text=self._evasion_args_edit.toPlainText(),
+            performance_args_text=self._performance_args_edit.toPlainText(),
+            output_args_text=self._output_args_edit.toPlainText(),
             advanced_args_text=self._advanced_args_edit.toPlainText(),
         )
 
@@ -846,11 +1189,12 @@ class MainWindow(QMainWindow):
             self._run_button.setEnabled(False)
             self._command_preview.setPlainText(str(exc))
             self._set_status_notes(
-                "Advanced arguments could not be parsed. Fix the line shown in the preview pane "
-                "before running the scan."
+                "One of the family or passthrough editors contains an invalid argument line. "
+                "Fix the quoted or split value before running the scan."
             )
-            self.statusBar().showMessage("Advanced arguments are invalid.", 5000)
-            self._append_console_line(f"[validation] {exc}")
+            if show_feedback:
+                self.statusBar().showMessage("Advanced arguments are invalid.", 5000)
+                self._append_console_line(f"[validation] {exc}")
             return None
 
         validation = self._scan_service.validator.validate(profile)
@@ -862,8 +1206,9 @@ class MainWindow(QMainWindow):
             self._run_button.setEnabled(False)
             self._command_preview.setPlainText(f"Profile validation failed.\n{issues}")
             self._set_status_notes(f"Validation issues detected:\n{issues}")
-            self.statusBar().showMessage("Profile validation failed.", 5000)
-            self._append_console_line("[validation] Profile validation failed")
+            if show_feedback:
+                self.statusBar().showMessage("Profile validation failed.", 5000)
+                self._append_console_line("[validation] Profile validation failed")
             return None
 
         command = self._scan_service.executor.build_command(profile, "<temp file>")
@@ -908,7 +1253,7 @@ class MainWindow(QMainWindow):
             if argument not in {"-sC", "--traceroute"}
         ]
         if passthrough_args:
-            lines.append(f"Advanced passthrough args: {' '.join(passthrough_args)}")
+            lines.append(f"Extra arguments: {' '.join(passthrough_args)}")
 
         for warning in self._profile_warnings(profile):
             lines.append(f"Warning: {warning}")
@@ -953,7 +1298,7 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _run_scan(self) -> None:
-        profile = self._validate_profile(show_feedback=False)
+        profile = self._validate_profile(show_feedback=True)
         if profile is None:
             return
 
@@ -970,11 +1315,12 @@ class MainWindow(QMainWindow):
 
         self._latest_execution = None
         self._latest_result = None
+        self._current_result_source_xml = None
         self._render_result(None)
         self._set_scan_running_state(True)
         self._set_status_notes(
-            f"Running {profile.name}. Output is streaming in the runtime console while the "
-            "GUI stays responsive."
+            f"Running {profile.name}. Output is streaming in the runtime console while the GUI "
+            "stays responsive."
         )
 
         command_preview = subprocess.list2cmdline(
@@ -1001,8 +1347,17 @@ class MainWindow(QMainWindow):
         self._scan_thread.start()
         self.statusBar().showMessage("Scan started in the background.")
 
+    def _scan_locked_widgets(self) -> tuple[QWidget, ...]:
+        return (
+            *self._form_widgets(),
+            self._load_xml_button,
+            self._load_latest_xml_button,
+            self._export_current_button,
+            self._export_latest_button,
+        )
+
     def _set_scan_running_state(self, running: bool) -> None:
-        for widget in self._form_widgets():
+        for widget in self._scan_locked_widgets():
             widget.setEnabled(not running)
 
         if running:
@@ -1012,6 +1367,7 @@ class MainWindow(QMainWindow):
             self._progress.setRange(0, 100)
             self._sync_scan_type_controls()
             self._run_button.setEnabled(self._can_run_scan())
+            self._update_result_action_buttons()
 
     def _form_widgets(self) -> tuple[QWidget, ...]:
         return (
@@ -1025,6 +1381,28 @@ class MainWindow(QMainWindow):
             self._os_check,
             self._default_scripts_check,
             self._traceroute_check,
+            self._skip_host_discovery_check,
+            self._disable_dns_resolution_check,
+            self._top_ports_input,
+            self._exclude_ports_input,
+            self._script_expression_input,
+            self._script_arguments_input,
+            self._decoys_input,
+            self._source_port_input,
+            self._min_rate_input,
+            self._max_rate_input,
+            self._host_timeout_input,
+            self._stats_interval_input,
+            self._normal_output_path_input,
+            self._grepable_output_path_input,
+            self._verbose_output_check,
+            self._packet_trace_check,
+            self._host_discovery_args_edit,
+            self._port_strategy_args_edit,
+            self._nse_args_edit,
+            self._evasion_args_edit,
+            self._performance_args_edit,
+            self._output_args_edit,
             self._advanced_args_edit,
             self._validate_button,
             self._preview_button,
@@ -1048,6 +1426,7 @@ class MainWindow(QMainWindow):
         self._latest_execution = scan_execution
         self._latest_result = scan_execution.result
         self._current_profile = scan_execution.profile
+        self._current_result_source_xml = scan_execution.xml_output_path
         self._progress.setRange(0, 100)
         self._progress.setValue(100)
         self._progress.setFormat("Scan completed")
@@ -1083,6 +1462,7 @@ class MainWindow(QMainWindow):
         self._scan_worker = None
         self._scan_thread = None
         self._run_button.setEnabled(self._can_run_scan())
+        self._update_result_action_buttons()
 
     def _build_completion_summary(self, execution: ScanExecution) -> str:
         result = execution.result
@@ -1136,14 +1516,17 @@ class MainWindow(QMainWindow):
                 self._append_console_line(f"[diagnostics] {line}")
 
         self._run_button.setEnabled(self._can_run_scan())
+        self._update_result_action_buttons()
 
     def _render_result(self, result: ScanResult | None) -> None:
         self._results_table.setRowCount(0)
 
         if result is None:
             self._results_note.setText(
-                "Run a scan to populate typed host and port rows from the XML artifact."
+                "Run or load a scan to populate typed host and port rows from XML."
             )
+            self._update_artifact_summary()
+            self._update_result_action_buttons()
             return
 
         rows = self._build_result_rows(result)
@@ -1160,6 +1543,8 @@ class MainWindow(QMainWindow):
             summary = f"{summary} {result.stats.summary}"
 
         self._results_note.setText(summary)
+        self._update_artifact_summary()
+        self._update_result_action_buttons()
 
     def _build_result_rows(self, result: ScanResult) -> list[tuple[str, str, str, str, str, str]]:
         rows: list[tuple[str, str, str, str, str, str]] = []
@@ -1202,3 +1587,143 @@ class MainWindow(QMainWindow):
 
     def _append_console_line(self, text: str) -> None:
         self._console.appendPlainText(text)
+
+    def _update_artifact_summary(self) -> None:
+        if self._current_result_source_xml is None:
+            self._artifact_status_label.setText("No XML artifact loaded yet.")
+        else:
+            self._artifact_status_label.setText(
+                f"Current XML artifact: {self._current_result_source_xml}"
+            )
+
+        if self._last_report_export is None:
+            self._report_status_label.setText(
+                "Reports will be written under the reports directory when exported."
+            )
+        else:
+            self._report_status_label.setText(
+                "Latest export: "
+                f"{self._last_report_export.json_report_path} and "
+                f"{self._last_report_export.markdown_report_path}"
+            )
+
+    def _update_result_action_buttons(self) -> None:
+        scan_running = self._scan_thread is not None
+        has_current_result = self._latest_result is not None
+
+        self._load_xml_button.setEnabled(not scan_running)
+        self._load_latest_xml_button.setEnabled(not scan_running)
+        self._export_latest_button.setEnabled(not scan_running)
+        self._export_current_button.setEnabled(not scan_running and has_current_result)
+
+    def _load_xml_artifact(
+        self,
+        xml_path: Path,
+        *,
+        log_to_console: bool,
+    ) -> LoadedScanResult | None:
+        try:
+            loaded = self._result_loader.load_from_xml_file(xml_path)
+        except Exception as exc:
+            self.statusBar().showMessage(f"Failed to load XML: {exc}", 7000)
+            if log_to_console:
+                self._append_console_line(f"[error] Failed to load XML: {exc}")
+            return None
+
+        self._apply_loaded_result(loaded, log_to_console=log_to_console)
+        self.statusBar().showMessage("XML artifact loaded.", 5000)
+        return loaded
+
+    def _load_latest_available_xml(self, *, log_to_console: bool) -> LoadedScanResult | None:
+        try:
+            loaded = self._result_loader.load_latest_available()
+        except Exception as exc:
+            self.statusBar().showMessage(f"Failed to load latest XML: {exc}", 7000)
+            if log_to_console:
+                self._append_console_line(f"[error] Failed to load latest XML: {exc}")
+            return None
+
+        self._apply_loaded_result(loaded, log_to_console=log_to_console)
+        self.statusBar().showMessage("Latest available XML loaded.", 5000)
+        return loaded
+
+    def _apply_loaded_result(self, loaded: LoadedScanResult, *, log_to_console: bool) -> None:
+        self._latest_execution = None
+        self._latest_result = loaded.scan_result
+        self._current_result_source_xml = loaded.source_xml_path
+        self._command_preview.setPlainText(loaded.scan_result.command or "unknown")
+        self._render_result(loaded.scan_result)
+        self._set_status_notes(self._build_loaded_result_summary(loaded))
+        self._progress.setRange(0, 100)
+        self._progress.setValue(100)
+        self._progress.setFormat("XML artifact loaded")
+
+        if log_to_console:
+            self._append_console_line(f"[load] XML artifact loaded: {loaded.source_xml_path}")
+            if loaded.used_fallback_source:
+                self._append_console_line("[load] Fallback sample XML was used")
+
+    def _build_loaded_result_summary(self, loaded: LoadedScanResult) -> str:
+        host_count = len(loaded.scan_result.hosts)
+        port_count = sum(len(host.ports) for host in loaded.scan_result.hosts)
+        lines = [
+            f"XML artifact: {loaded.source_xml_path}",
+            f"Hosts parsed: {host_count}",
+            f"Ports parsed: {port_count}",
+        ]
+
+        if loaded.used_fallback_source:
+            lines.append("Source type: bundled fallback sample")
+
+        if loaded.scan_result.stats.summary:
+            lines.append(f"Nmap summary: {loaded.scan_result.stats.summary}")
+
+        return "\n".join(lines)
+
+    def _export_current_reports(self, *, log_to_console: bool) -> ScanReportExportResult | None:
+        if self._latest_result is None:
+            self.statusBar().showMessage("No current result is loaded for export.", 5000)
+            if log_to_console:
+                self._append_console_line("[export] No current result is available for export")
+            return None
+
+        export_result = self._report_exporter.export_scan_result(
+            self._latest_result,
+            source_xml_path=self._current_result_source_xml,
+        )
+        self._apply_export_result(export_result, log_to_console=log_to_console)
+        self.statusBar().showMessage("Current reports exported.", 5000)
+        return export_result
+
+    def _export_latest_available_reports(
+        self,
+        *,
+        log_to_console: bool,
+    ) -> ScanReportExportResult | None:
+        try:
+            export_result = self._report_exporter.export_latest_available()
+        except Exception as exc:
+            self.statusBar().showMessage(f"Failed to export latest reports: {exc}", 7000)
+            if log_to_console:
+                self._append_console_line(f"[error] Failed to export latest reports: {exc}")
+            return None
+
+        self._apply_export_result(export_result, log_to_console=log_to_console)
+        self.statusBar().showMessage("Latest available reports exported.", 5000)
+        return export_result
+
+    def _apply_export_result(
+        self,
+        export_result: ScanReportExportResult,
+        *,
+        log_to_console: bool,
+    ) -> None:
+        self._last_report_export = export_result
+        self._update_artifact_summary()
+        if log_to_console:
+            self._append_console_line(
+                f"[export] JSON report: {export_result.json_report_path}"
+            )
+            self._append_console_line(
+                f"[export] Markdown report: {export_result.markdown_report_path}"
+            )

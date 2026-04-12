@@ -28,8 +28,8 @@ command as a preview for transparency.
 
 At the same time, the product must remain faithful to the full Nmap surface. The
 design therefore uses a hybrid model: structured controls for common workflows,
-plus advanced arguments that pass directly through to Nmap for rare or highly
-specific combinations.
+family-specific editors for major Nmap domains, and advanced arguments that pass
+directly through to Nmap for rare or highly specific combinations.
 
 The expected workflow is:
 
@@ -72,6 +72,20 @@ application should remain understandable to users who already know Nmap.
 The advanced-arguments field is not a fallback for broken UI design. It is a
 deliberate compatibility layer so the application can remain complete even
 before every niche Nmap option has a dedicated widget.
+
+### Nmap families
+
+The GUI now includes grouped editors for major Nmap option families:
+
+- host discovery
+- scan variants and port strategy
+- NSE and scripts
+- evasion and spoofing
+- performance
+- output and verbosity
+
+Each family should offer a small number of guided fields for common cases plus
+an exact-arguments editor for the rest of that family.
 
 ### Profiles
 
@@ -116,6 +130,9 @@ future state extends that with:
 - service metadata
 - export/report actions
 
+The results area should also support loading existing XML artifacts from disk so
+operators can review or re-export past scans without launching a new process.
+
 ## UX rules
 
 - Prefer progressive disclosure over exposing every Nmap flag on day one.
@@ -153,3 +170,9 @@ future state extends that with:
 - running scans in a background Qt worker
 - surfacing environment diagnostics in the execution panel
 - rendering typed XML results into the results table
+
+### Phase 4 now covers
+
+- organizing broader Nmap coverage into family-specific editors
+- loading XML artifacts from disk through the application layer
+- exporting current or latest available results to JSON and Markdown from the GUI

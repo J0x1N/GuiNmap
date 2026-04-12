@@ -64,6 +64,14 @@ class ScanProfileValidator:
         if any(not argument.strip() for argument in profile.extra_args):
             issues.append(ValidationIssue("extra_args", "Advanced arguments cannot be blank."))
 
+        if "-oX" in profile.extra_args:
+            issues.append(
+                ValidationIssue(
+                    "extra_args",
+                    "XML output is managed by GuiNmap. Do not pass -oX manually.",
+                )
+            )
+
         if profile.scan_type == "ping":
             if profile.ports:
                 issues.append(

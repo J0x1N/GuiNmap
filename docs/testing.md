@@ -29,9 +29,11 @@ What this covers today:
 - XML parsing in `NmapXmlParser`
 - environment diagnostics and scan-type recommendations
 - profile composition from structured UI fields plus advanced passthrough args
+- XML artifact loading from the application layer
 - JSON and Markdown report exporting from typed scan results
 - execution flow in `ScanService` using a fake Nmap binary
 - GUI preview behavior and scan-type form constraints
+- GUI XML loading and current-report export actions
 
 This means you can validate the project logic even if Nmap is not installed yet.
 
@@ -44,9 +46,10 @@ python -m guinmap.main
 What to check:
 - the window opens without crashing
 - the main sections render correctly
-- the Scan Builder, Profiles, Execution, Results, and Runtime panels are visible
+- the Scan Builder, Nmap Families, Execution, Results, and Runtime panels are visible
 - the command preview updates after pressing `Preview command`
 - the `Run scan` button stays disabled when Nmap is not available
+- `Load latest XML` works even before a real scan exists, thanks to the sample fallback
 
 ### 4. Run a real smoke test with Nmap installed
 
@@ -132,14 +135,18 @@ What to check:
 
 What to check:
 - a valid profile produces a readable command preview
+- grouped family fields appear in the preview when populated
 - advanced arguments appear in the preview exactly as intended
 - the UI stays responsive while a real scan is running
 - results populate from XML after the scan completes
+- loading an XML file updates the results table without launching a scan
+- exporting current reports writes both JSON and Markdown outputs
 
 ## Practical review checklist
 
 - Does the generated command match the selected profile?
 - Can unusual Nmap combinations still be expressed through advanced arguments?
+- Can XML artifacts be loaded and reviewed without rerunning a scan?
 - Does the XML file exist when the scan finishes?
 - Does a non-zero Nmap exit code produce a clear error?
 - Do parsed hosts and ports preserve exact Nmap states like `open|filtered`?

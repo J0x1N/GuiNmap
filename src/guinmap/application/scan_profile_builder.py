@@ -20,18 +20,159 @@ class ScanProfileDraft:
     enable_os_detection: bool = False
     enable_default_scripts: bool = False
     enable_traceroute: bool = False
+    skip_host_discovery: bool = False
+    disable_dns_resolution: bool = False
+    top_ports_text: str = ""
+    exclude_ports_text: str = ""
+    script_expression: str = ""
+    script_arguments_text: str = ""
+    decoys_text: str = ""
+    source_port_text: str = ""
+    min_rate_text: str = ""
+    max_rate_text: str = ""
+    host_timeout_text: str = ""
+    stats_interval_text: str = ""
+    normal_output_path: str = ""
+    grepable_output_path: str = ""
+    enable_verbose_output: bool = False
+    enable_packet_trace: bool = False
+    host_discovery_args_text: str = ""
+    port_strategy_args_text: str = ""
+    nse_args_text: str = ""
+    evasion_args_text: str = ""
+    performance_args_text: str = ""
+    output_args_text: str = ""
     advanced_args_text: str = ""
 
 
 class ScanProfileBuilder:
     def build(self, draft: ScanProfileDraft) -> ScanProfile:
-        extra_args = self._parse_extra_args(draft.advanced_args_text)
+        user_args: list[str] = []
+        self._extend_parsed_args(user_args, draft.host_discovery_args_text)
+        self._extend_parsed_args(user_args, draft.port_strategy_args_text)
+        self._extend_parsed_args(user_args, draft.nse_args_text)
+        self._extend_parsed_args(user_args, draft.evasion_args_text)
+        self._extend_parsed_args(user_args, draft.performance_args_text)
+        self._extend_parsed_args(user_args, draft.output_args_text)
+        self._extend_parsed_args(user_args, draft.advanced_args_text)
+
+        structured_args: list[str] = []
+
+        if draft.skip_host_discovery:
+            self._append_flag_if_missing(structured_args, user_args, "-Pn")
+
+        if draft.disable_dns_resolution:
+            self._append_flag_if_missing(structured_args, user_args, "-n")
+
+        if draft.top_ports_text.strip():
+            self._append_option_if_missing(
+                structured_args,
+                user_args,
+                "--top-ports",
+                draft.top_ports_text.strip(),
+            )
+
+        if draft.exclude_ports_text.strip():
+            self._append_option_if_missing(
+                structured_args,
+                user_args,
+                "--exclude-ports",
+                draft.exclude_ports_text.strip(),
+            )
+
+        if draft.script_expression.strip():
+            self._append_option_if_missing(
+                structured_args,
+                user_args,
+                "--script",
+                draft.script_expression.strip(),
+            )
+
+        if draft.script_arguments_text.strip():
+            self._append_option_if_missing(
+                structured_args,
+                user_args,
+                "--script-args",
+                draft.script_arguments_text.strip(),
+            )
+
+        if draft.decoys_text.strip():
+            self._append_option_if_missing(
+                structured_args,
+                user_args,
+                "-D",
+                draft.decoys_text.strip(),
+            )
+
+        if draft.source_port_text.strip():
+            self._append_option_if_missing(
+                structured_args,
+                user_args,
+                "--source-port",
+                draft.source_port_text.strip(),
+            )
+
+        if draft.min_rate_text.strip():
+            self._append_option_if_missing(
+                structured_args,
+                user_args,
+                "--min-rate",
+                draft.min_rate_text.strip(),
+            )
+
+        if draft.max_rate_text.strip():
+            self._append_option_if_missing(
+                structured_args,
+                user_args,
+                "--max-rate",
+                draft.max_rate_text.strip(),
+            )
+
+        if draft.host_timeout_text.strip():
+            self._append_option_if_missing(
+                structured_args,
+                user_args,
+                "--host-timeout",
+                draft.host_timeout_text.strip(),
+            )
+
+        if draft.stats_interval_text.strip():
+            self._append_option_if_missing(
+                structured_args,
+                user_args,
+                "--stats-every",
+                draft.stats_interval_text.strip(),
+            )
+
+        if draft.normal_output_path.strip():
+            self._append_option_if_missing(
+                structured_args,
+                user_args,
+                "-oN",
+                draft.normal_output_path.strip(),
+            )
+
+        if draft.grepable_output_path.strip():
+            self._append_option_if_missing(
+                structured_args,
+                user_args,
+                "-oG",
+                draft.grepable_output_path.strip(),
+            )
+
+        if draft.enable_verbose_output:
+            self._append_flag_if_missing(structured_args, user_args, "-v")
+
+        if draft.enable_packet_trace:
+            self._append_flag_if_missing(structured_args, user_args, "--packet-trace")
 
         if draft.enable_default_scripts:
-            self._append_flag_if_missing(extra_args, "-sC")
+            self._append_flag_if_missing(structured_args, user_args, "-sC")
 
         if draft.enable_traceroute:
-            self._append_flag_if_missing(extra_args, "--traceroute")
+            self._append_flag_if_missing(structured_args, user_args, "--traceroute")
+
+        extra_args = [*structured_args, *user_args]
 
         return ScanProfile(
             name=draft.name.strip(),
@@ -51,21 +192,34 @@ class ScanProfileBuilder:
             if token
         ]
 
-    def _parse_extra_args(self, advanced_args_text: str) -> list[str]:
-        parsed_arguments: list[str] = []
-
-        for raw_line in advanced_args_text.splitlines():
+    def _extend_parsed_args(self, arguments: list[str], args_text: str) -> None:
+        for raw_line in args_text.splitlines():
             line = raw_line.strip()
             if not line:
                 continue
 
             try:
-                parsed_arguments.extend(shlex.split(line, posix=True))
+                arguments.extend(shlex.split(line, posix=True))
             except ValueError as exc:
                 raise ValueError(f"Invalid advanced argument line '{line}': {exc}") from exc
 
-        return parsed_arguments
-
-    def _append_flag_if_missing(self, arguments: list[str], flag: str) -> None:
-        if flag not in arguments:
+    def _append_flag_if_missing(
+        self,
+        arguments: list[str],
+        existing_arguments: list[str],
+        flag: str,
+    ) -> None:
+        if flag not in arguments and flag not in existing_arguments:
             arguments.append(flag)
+
+    def _append_option_if_missing(
+        self,
+        arguments: list[str],
+        existing_arguments: list[str],
+        flag: str,
+        value: str,
+    ) -> None:
+        if flag in arguments or flag in existing_arguments:
+            return
+
+        arguments.extend([flag, value])

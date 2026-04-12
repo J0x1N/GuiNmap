@@ -14,6 +14,7 @@ from guinmap.application.scan_profile_validator import (
     ScanProfileValidator,
     ValidationIssue,
 )
+from guinmap.application.scan_result_loader import LoadedScanResult, ScanResultLoader
 from guinmap.application.scan_service import ScanExecution, ScanExecutionError, ScanService
 
 __all__ = [
@@ -30,6 +31,8 @@ __all__ = [
     "ScanPreset",
     "ScanReportExporter",
     "ScanReportExportResult",
+    "LoadedScanResult",
+    "ScanResultLoader",
     "ScanService",
     "ValidationIssue",
     "get_scan_preset",

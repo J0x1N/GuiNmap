@@ -100,6 +100,20 @@ def test_export_json_and_markdown_write_files(tmp_path: Path) -> None:
     assert "demo.local" in markdown_path.read_text(encoding="utf-8")
 
 
+def test_export_scan_result_writes_report_pair(tmp_path: Path) -> None:
+    exporter = ScanReportExporter(reports_dir=tmp_path / "reports")
+
+    export_result = exporter.export_scan_result(
+        build_sample_result(),
+        source_xml_path=tmp_path / "artifact.xml",
+    )
+
+    assert export_result.source_xml_path == tmp_path / "artifact.xml"
+    assert export_result.json_report_path.exists()
+    assert export_result.markdown_report_path.exists()
+    assert export_result.json_report_path.stem == export_result.markdown_report_path.stem
+
+
 def test_export_from_xml_file_writes_both_reports(tmp_path: Path) -> None:
         xml_path = tmp_path / "sample.xml"
         xml_path.write_text(

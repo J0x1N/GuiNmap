@@ -56,6 +56,29 @@ class ScanReportExporter:
         path.write_text(self.render_markdown(scan_result), encoding="utf-8")
         return path
 
+    def export_scan_result(
+        self,
+        scan_result: ScanResult,
+        *,
+        source_xml_path: Path | None = None,
+        used_fallback_source: bool = False,
+    ) -> ScanReportExportResult:
+        json_output_path, markdown_output_path = self._build_pair_output_paths(scan_result)
+
+        json_report_path = self.export_json(scan_result, json_output_path)
+        markdown_report_path = self.export_markdown(scan_result, markdown_output_path)
+
+        return ScanReportExportResult(
+            source_xml_path=(
+                Path("<in-memory-scan-result>")
+                if source_xml_path is None
+                else source_xml_path
+            ),
+            json_report_path=json_report_path,
+            markdown_report_path=markdown_report_path,
+            used_fallback_source=used_fallback_source,
+        )
+
     def export_from_xml_file(
         self,
         xml_path: Path,
@@ -63,15 +86,9 @@ class ScanReportExporter:
         parser: NmapXmlParser | None = None,
     ) -> ScanReportExportResult:
         scan_result = (parser or NmapXmlParser()).parse_file(xml_path)
-        json_output_path, markdown_output_path = self._build_pair_output_paths(scan_result)
-
-        json_report_path = self.export_json(scan_result, json_output_path)
-        markdown_report_path = self.export_markdown(scan_result, markdown_output_path)
-
-        return ScanReportExportResult(
+        return self.export_scan_result(
+            scan_result,
             source_xml_path=xml_path,
-            json_report_path=json_report_path,
-            markdown_report_path=markdown_report_path,
         )
 
     def export_latest_available(

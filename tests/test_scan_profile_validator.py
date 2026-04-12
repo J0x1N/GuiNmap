@@ -60,3 +60,17 @@ def test_scan_service_rejects_invalid_profile_before_process_execution(tmp_path)
 
     with pytest.raises(ScanProfileValidationError, match="name:|targets:"):
         service.run(profile)
+
+
+def test_validator_rejects_manual_xml_output_override() -> None:
+    validator = ScanProfileValidator()
+    profile = ScanProfile(
+        name="Manual XML",
+        targets=["127.0.0.1"],
+        extra_args=["-oX", "custom.xml"],
+    )
+
+    result = validator.validate(profile)
+
+    assert result.is_valid is False
+    assert any("-oX" in issue.message for issue in result.issues)
