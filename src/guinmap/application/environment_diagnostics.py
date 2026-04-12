@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ctypes
 import platform
-import shutil
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,7 +52,7 @@ class EnvironmentDiagnosticsService:
 
     def inspect(self) -> EnvironmentDiagnostics:
         platform_name = self.platform_provider()
-        resolved_binary_path = self._resolve_binary_path(self.executor.binary)
+        resolved_binary_path = self.executor.resolve_binary_path()
         binary_available = resolved_binary_path is not None
         is_admin = self.admin_provider()
         is_windows = platform_name.lower().startswith("win")
@@ -68,6 +67,17 @@ class EnvironmentDiagnosticsService:
                     level="error",
                     message=(
                         f"The configured Nmap binary '{self.executor.binary}' is not available."
+                    ),
+                )
+            )
+
+        if binary_available and self._uses_fallback_install_path(resolved_binary_path):
+            issues.append(
+                EnvironmentIssue(
+                    level="info",
+                    message=(
+                        "GuiNmap auto-detected the standard Windows Nmap installation at "
+                        f"'{resolved_binary_path}'."
                     ),
                 )
             )
@@ -113,10 +123,15 @@ class EnvironmentDiagnosticsService:
             issues=tuple(issues),
         )
 
-    def _resolve_binary_path(self, binary: str) -> str | None:
-        binary_path = Path(binary)
-        if binary_path.is_file():
-            return str(binary_path)
+    def _uses_fallback_install_path(self, resolved_binary_path: str | None) -> bool:
+        if resolved_binary_path is None:
+            return False
 
-        resolved = shutil.which(binary)
-        return resolved if resolved else None
+        binary_path = Path(self.executor.binary)
+        if binary_path.is_file():
+            return False
+
+        return any(
+            str(candidate) == resolved_binary_path
+            for candidate in self.executor.fallback_binary_locations
+        )

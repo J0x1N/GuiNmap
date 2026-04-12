@@ -16,6 +16,11 @@ SCAN_TYPE_FLAGS: dict[str, list[str]] = {
     "ping": ["-sn"],
 }
 
+DEFAULT_WINDOWS_BINARY_LOCATIONS: tuple[Path, ...] = (
+    Path(r"C:\Program Files\Nmap\nmap.exe"),
+    Path(r"C:\Program Files (x86)\Nmap\nmap.exe"),
+)
+
 
 @dataclass(slots=True)
 class NmapExecutor:
@@ -23,14 +28,30 @@ class NmapExecutor:
     binary_arguments: list[str] = field(default_factory=list)
     stats_interval: str = "5s"
     noninteractive: bool = True
+    fallback_binary_locations: tuple[Path, ...] = DEFAULT_WINDOWS_BINARY_LOCATIONS
 
     def is_available(self) -> bool:
+        return self.resolve_binary_path() is not None
+
+    def resolve_binary_path(self) -> str | None:
         binary_path = Path(self.binary)
 
         if binary_path.is_file():
-            return True
+            return str(binary_path)
 
-        return shutil.which(self.binary) is not None
+        resolved = shutil.which(self.binary)
+        if resolved is not None:
+            return resolved
+
+        binary_name = binary_path.name.lower()
+        if binary_name not in {"nmap", "nmap.exe"}:
+            return None
+
+        for candidate in self.fallback_binary_locations:
+            if candidate.is_file():
+                return str(candidate)
+
+        return None
 
     def build_command(self, profile: ScanProfile, xml_output_path: Path | str) -> list[str]:
         if not profile.targets:
@@ -42,7 +63,12 @@ class NmapExecutor:
         if profile.timing_template not in {0, 1, 2, 3, 4, 5}:
             raise ValueError("Timing template must be between 0 and 5.")
 
-        command = [self.binary, *self.binary_arguments, "-oX", str(xml_output_path)]
+        command = [
+            self.resolve_binary_path() or self.binary,
+            *self.binary_arguments,
+            "-oX",
+            str(xml_output_path),
+        ]
 
         if self.noninteractive:
             command.append("--noninteractive")

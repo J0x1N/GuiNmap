@@ -126,6 +126,8 @@ Real scan execution should run outside the GUI thread and stream operator-facing
 output back into the runtime console.
 The same execution area should also allow the operator to cancel a running scan
 without freezing the window or leaving the form in an inconsistent state.
+On Windows, the runtime should also accept the standard Nmap installation path
+as a valid binary source even when `nmap` is not exposed through `PATH`.
 
 ### Operator preferences
 

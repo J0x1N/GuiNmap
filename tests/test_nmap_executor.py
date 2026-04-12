@@ -18,7 +18,7 @@ def test_build_command_includes_expected_flags() -> None:
         script_selection=["default", "safe"],
         extra_args=["--reason"],
     )
-    executor = NmapExecutor(binary="nmap")
+    executor = NmapExecutor(binary="nmap", fallback_binary_locations=())
     xml_output_path = Path("artifacts/scans/test.xml")
 
     command = executor.build_command(profile, xml_output_path)
@@ -50,3 +50,19 @@ def test_build_command_rejects_invalid_timing_template() -> None:
 
     with pytest.raises(ValueError, match="Timing template"):
         executor.build_command(profile, Path("scan.xml"))
+
+
+def test_build_command_uses_fallback_windows_install_when_available(tmp_path: Path) -> None:
+    fallback_binary = tmp_path / "Nmap" / "nmap.exe"
+    fallback_binary.parent.mkdir(parents=True, exist_ok=True)
+    fallback_binary.write_text("placeholder", encoding="utf-8")
+
+    profile = ScanProfile(name="Fallback", targets=["127.0.0.1"])
+    executor = NmapExecutor(
+        binary="nmap",
+        fallback_binary_locations=(fallback_binary,),
+    )
+
+    command = executor.build_command(profile, Path("scan.xml"))
+
+    assert command[0] == str(fallback_binary)

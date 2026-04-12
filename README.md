@@ -75,7 +75,7 @@ source attribution and licensing notes.
 ## Local prerequisites
 
 - Python 3.11 or newer
-- Nmap installed and available in `PATH`
+- Nmap installed. On Windows, GuiNmap will also detect the standard install path even if `nmap` is not in `PATH`
 - On Windows, Npcap installed together with Nmap
 - Administrative privileges for scan modes that require raw packet access
 
