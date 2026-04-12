@@ -26,6 +26,11 @@ The GUI should not ask the user to write raw shell commands as the main path.
 Instead, it should build commands from typed inputs and only expose the generated
 command as a preview for transparency.
 
+At the same time, the product must remain faithful to the full Nmap surface. The
+design therefore uses a hybrid model: structured controls for common workflows,
+plus advanced arguments that pass directly through to Nmap for rare or highly
+specific combinations.
+
 The expected workflow is:
 
 1. Select a preset or start from a blank profile
@@ -33,7 +38,7 @@ The expected workflow is:
 3. Choose scan type and timing
 4. Enable optional features such as service detection or NSE
 5. Validate the profile before execution
-6. Launch the scan and monitor progress
+6. Launch the scan in a background worker and monitor progress
 7. Inspect structured results derived from XML
 
 ## Design language
@@ -64,6 +69,10 @@ scan profile:
 It also shows a generated command preview. That preview is important because the
 application should remain understandable to users who already know Nmap.
 
+The advanced-arguments field is not a fallback for broken UI design. It is a
+deliberate compatibility layer so the application can remain complete even
+before every niche Nmap option has a dedicated widget.
+
 ### Profiles
 
 Profiles should expose curated workflows rather than every Nmap option at once.
@@ -77,6 +86,7 @@ The initial profile strategy is:
 This keeps the beginner path clear while still mapping to real Nmap concepts.
 Preset definitions should live in the application layer so the UI consumes a
 shared source of truth rather than repeating hardcoded labels and commands.
+Presets should remain editable baselines rather than locked templates.
 
 ### Execution
 
@@ -91,11 +101,14 @@ packet privileges and Npcap.
 Environment diagnostics should come from the application layer so the UI can
 show actionable warnings before a scan starts, instead of discovering basic
 environment problems only after subprocess launch fails.
+Real scan execution should run outside the GUI thread and stream operator-facing
+output back into the runtime console.
 
 ### Results
 
-Results should be driven by typed models, not raw text parsing. The future state
-is a combination of:
+Results should be driven by typed models, not raw text parsing. The current
+state already includes a host and port table populated from parsed XML. The
+future state extends that with:
 
 - host table
 - per-host detail view
@@ -132,3 +145,11 @@ is a combination of:
 - generating commands through `NmapExecutor`
 - starting and stopping a subprocess safely
 - collecting progress through process output and XML artifacts
+
+### Phase 3 now covers
+
+- composing scan profiles from UI state in the application layer
+- validating and previewing exact Nmap commands before launch
+- running scans in a background Qt worker
+- surfacing environment diagnostics in the execution panel
+- rendering typed XML results into the results table

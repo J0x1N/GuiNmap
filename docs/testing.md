@@ -28,8 +28,10 @@ What this covers today:
 - command construction in `NmapExecutor`
 - XML parsing in `NmapXmlParser`
 - environment diagnostics and scan-type recommendations
+- profile composition from structured UI fields plus advanced passthrough args
 - JSON and Markdown report exporting from typed scan results
 - execution flow in `ScanService` using a fake Nmap binary
+- GUI preview behavior and scan-type form constraints
 
 This means you can validate the project logic even if Nmap is not installed yet.
 
@@ -43,6 +45,8 @@ What to check:
 - the window opens without crashing
 - the main sections render correctly
 - the Scan Builder, Profiles, Execution, Results, and Runtime panels are visible
+- the command preview updates after pressing `Preview command`
+- the `Run scan` button stays disabled when Nmap is not available
 
 ### 4. Run a real smoke test with Nmap installed
 
@@ -126,9 +130,16 @@ What to check:
 - `python -m guinmap.main`
 - one manual GUI-run smoke test
 
+What to check:
+- a valid profile produces a readable command preview
+- advanced arguments appear in the preview exactly as intended
+- the UI stays responsive while a real scan is running
+- results populate from XML after the scan completes
+
 ## Practical review checklist
 
 - Does the generated command match the selected profile?
+- Can unusual Nmap combinations still be expressed through advanced arguments?
 - Does the XML file exist when the scan finishes?
 - Does a non-zero Nmap exit code produce a clear error?
 - Do parsed hosts and ports preserve exact Nmap states like `open|filtered`?

@@ -32,7 +32,7 @@ class NmapExecutor:
 
         return shutil.which(self.binary) is not None
 
-    def build_command(self, profile: ScanProfile, xml_output_path: Path) -> list[str]:
+    def build_command(self, profile: ScanProfile, xml_output_path: Path | str) -> list[str]:
         if not profile.targets:
             raise ValueError("At least one target must be provided.")
 

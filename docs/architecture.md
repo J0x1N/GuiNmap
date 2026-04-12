@@ -56,11 +56,13 @@ src/guinmap/
   application/
     environment_diagnostics.py
     report_exporter.py
+    scan_profile_builder.py
     scan_presets.py
     scan_profile_validator.py
     scan_service.py
   ui/
     main_window.py
+    scan_worker.py
   domain/
     scan_profile.py
     scan_result.py
@@ -72,8 +74,8 @@ src/guinmap/
 ## Responsibility split
 
 - **application/** coordinates use cases such as launching scans, validating profiles,
-  defining presets, exporting reports, checking environment capabilities, and
-  handling artifacts.
+  composing profiles from UI input, defining presets, exporting reports,
+  checking environment capabilities, and handling artifacts.
 - **ui/** contains widgets, windows, dialogs, and presentation logic.
 - **domain/** contains the core data structures the rest of the app works with.
 - **infrastructure/** contains Nmap process orchestration and XML parsing.
@@ -84,11 +86,11 @@ between the UI and the infrastructure modules.
 ## Initial scan pipeline
 
 1. The user selects or builds a scan profile in the GUI.
-2. The UI passes the validated profile to the execution layer.
+2. The UI converts form state into a validated profile in the application layer.
 3. The execution layer builds an Nmap argument list.
-4. Nmap runs as a child process and writes XML results.
-5. The parser converts XML into internal result models.
-6. The UI renders the result models in tables, cards, and detail panels.
+4. A Qt worker runs Nmap in the background and streams output back to the UI.
+5. Nmap writes XML results and the parser converts them into internal models.
+6. The UI renders the typed result models in tables and detail panels.
 
 ## Phase 1 exit criteria
 
