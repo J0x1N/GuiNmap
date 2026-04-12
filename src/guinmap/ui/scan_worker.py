@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+
 from PySide6.QtCore import QObject, Signal, Slot
 
 from guinmap.application.scan_service import ScanExecutionError, ScanService
@@ -18,11 +20,21 @@ class ScanWorker(QObject):
         super().__init__()
         self._scan_service = scan_service
         self._profile = profile
+        self._cancel_requested = threading.Event()
+
+    @Slot()
+    def cancel(self) -> None:
+        self._cancel_requested.set()
+        self._scan_service.cancel_current_scan()
 
     @Slot()
     def run(self) -> None:
         try:
-            execution = self._scan_service.run(self._profile, on_output=self.output_received.emit)
+            execution = self._scan_service.run(
+                self._profile,
+                on_output=self.output_received.emit,
+                cancellation_requested=self._cancel_requested.is_set,
+            )
         except ScanExecutionError as exc:
             self.failed.emit(str(exc), exc.execution)
         except Exception as exc:

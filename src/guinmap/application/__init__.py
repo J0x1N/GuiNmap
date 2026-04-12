@@ -15,12 +15,20 @@ from guinmap.application.scan_profile_validator import (
     ValidationIssue,
 )
 from guinmap.application.scan_result_loader import LoadedScanResult, ScanResultLoader
-from guinmap.application.scan_service import ScanExecution, ScanExecutionError, ScanService
+from guinmap.application.scan_service import (
+    ScanCancelledError,
+    ScanExecution,
+    ScanExecutionError,
+    ScanService,
+)
+from guinmap.application.settings_service import AppSettingsService
 
 __all__ = [
     "EnvironmentDiagnostics",
     "EnvironmentDiagnosticsService",
     "EnvironmentIssue",
+    "AppSettingsService",
+    "ScanCancelledError",
     "ScanExecution",
     "ScanExecutionError",
     "ScanProfileBuilder",

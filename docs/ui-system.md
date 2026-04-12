@@ -15,7 +15,7 @@ The current shell is organized into five product-facing areas:
 1. Left navigation for workflow orientation
 2. Hero area for status and project context
 3. Scan Builder panel for structured input fields
-4. Profile and execution panels for operator guidance
+4. Profile, preferences, and execution panels for operator guidance
 5. Results and runtime panels for post-execution feedback
 
 This split mirrors how the application will evolve during later phases.
@@ -36,10 +36,12 @@ The expected workflow is:
 1. Select a preset or start from a blank profile
 2. Define targets and ports
 3. Choose scan type and timing
-4. Enable optional features such as service detection or NSE
-5. Validate the profile before execution
-6. Launch the scan in a background worker and monitor progress
-7. Inspect structured results derived from XML
+4. Reveal advanced Nmap families only if the basic workflow is not enough
+5. Enable optional features such as service detection or NSE
+6. Validate the profile before execution
+7. Launch the scan in a background worker and monitor progress
+8. Inspect structured results derived from XML
+9. Drill into host, port, script, and metadata details from the selected row
 
 ## Design language
 
@@ -87,6 +89,11 @@ The GUI now includes grouped editors for major Nmap option families:
 Each family should offer a small number of guided fields for common cases plus
 an exact-arguments editor for the rest of that family.
 
+The families panel is now hidden by default and revealed through an explicit
+control in the main workflow. This keeps the initial screen focused on the most
+common path and reduces the sense that the UI contains decorative or unused
+controls.
+
 ### Profiles
 
 Profiles should expose curated workflows rather than every Nmap option at once.
@@ -117,17 +124,34 @@ show actionable warnings before a scan starts, instead of discovering basic
 environment problems only after subprocess launch fails.
 Real scan execution should run outside the GUI thread and stream operator-facing
 output back into the runtime console.
+The same execution area should also allow the operator to cancel a running scan
+without freezing the window or leaving the form in an inconsistent state.
+
+### Operator preferences
+
+The GUI now includes a dedicated preferences panel for runtime configuration:
+
+- Nmap binary path
+- stats interval used for runtime progress output
+- XML artifact directory
+- report export directory
+- interface language (`English` or `Español`)
+- preferred scan type and timing template
+
+These settings should persist between sessions. Runtime settings apply directly
+to diagnostics, scan execution, artifact loading, and report export. Language
+selection currently applies fully when the window is opened again.
 
 ### Results
 
 Results should be driven by typed models, not raw text parsing. The current
-state already includes a host and port table populated from parsed XML. The
-future state extends that with:
+state now includes a host and port table populated from parsed XML plus
+selection-driven drill-down panels for:
 
-- host table
-- per-host detail view
-- port detail table
-- service metadata
+- host detail
+- port detail
+- script output
+- scan and artifact metadata
 - export/report actions
 
 The results area should also support loading existing XML artifacts from disk so
@@ -176,3 +200,11 @@ operators can review or re-export past scans without launching a new process.
 - organizing broader Nmap coverage into family-specific editors
 - loading XML artifacts from disk through the application layer
 - exporting current or latest available results to JSON and Markdown from the GUI
+
+### Phase 5 now covers
+
+- persisting operator preferences for binary path, output directories, and default execution options
+- persisting a bilingual UI preference for English and Spanish
+- applying saved preferences directly to diagnostics, execution, artifact loading, and report export
+- hiding advanced Nmap families until the operator explicitly reveals them
+- rendering per-selection detail panels for host, port, scripts, and scan metadata

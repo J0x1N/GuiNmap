@@ -56,6 +56,7 @@ src/guinmap/
   application/
     environment_diagnostics.py
     report_exporter.py
+    settings_service.py
     scan_profile_builder.py
     scan_result_loader.py
     scan_presets.py
@@ -65,21 +66,26 @@ src/guinmap/
     main_window.py
     scan_worker.py
   domain/
+    app_settings.py
     scan_profile.py
     scan_result.py
   infrastructure/
     nmap_executor.py
     nmap_xml_parser.py
+    settings_repository.py
 ```
 
 ## Responsibility split
 
 - **application/** coordinates use cases such as launching scans, validating profiles,
   composing profiles from UI input, loading XML artifacts, defining presets,
-  exporting reports, checking environment capabilities, and handling artifacts.
+  exporting reports, checking environment capabilities, handling artifacts, and
+  applying persistent operator preferences to the runtime services.
 - **ui/** contains widgets, windows, dialogs, and presentation logic.
-- **domain/** contains the core data structures the rest of the app works with.
-- **infrastructure/** contains Nmap process orchestration and XML parsing.
+- **domain/** contains the core data structures the rest of the app works with,
+  including persistent operator settings.
+- **infrastructure/** contains Nmap process orchestration, XML parsing, and
+  JSON persistence for settings.
 
 The `application/` layer is now in place as the first thin orchestration layer
 between the UI and the infrastructure modules.
@@ -89,10 +95,12 @@ between the UI and the infrastructure modules.
 1. The user selects or builds a scan profile in the GUI.
 2. The UI converts form state into a validated profile in the application layer.
 3. The execution layer builds an Nmap argument list.
-4. A Qt worker runs Nmap in the background and streams output back to the UI.
+4. A Qt worker runs Nmap in the background, streams output back to the UI, and accepts operator cancellation requests.
 5. Nmap writes XML results and the parser converts them into internal models.
 6. The UI can also load existing XML artifacts through the application layer.
-7. The UI renders typed result models and can export JSON and Markdown reports.
+7. Saved operator preferences configure the binary, runtime cadence, output paths, and interface language.
+8. The UI keeps advanced Nmap families hidden until the operator explicitly reveals them.
+9. The UI renders typed result models, exposes per-selection detail panels, and can export JSON and Markdown reports.
 
 ## Phase 1 exit criteria
 

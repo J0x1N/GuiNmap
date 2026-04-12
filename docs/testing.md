@@ -28,12 +28,14 @@ What this covers today:
 - command construction in `NmapExecutor`
 - XML parsing in `NmapXmlParser`
 - environment diagnostics and scan-type recommendations
+- persistent settings save/load and runtime application
+- language preference persistence for English and Spanish
 - profile composition from structured UI fields plus advanced passthrough args
 - XML artifact loading from the application layer
 - JSON and Markdown report exporting from typed scan results
-- execution flow in `ScanService` using a fake Nmap binary
+- execution flow and cancellation in `ScanService` using fake Nmap binaries
 - GUI preview behavior and scan-type form constraints
-- GUI XML loading and current-report export actions
+- GUI XML loading, persistent preferences, hidden advanced families, cancellation controls, and result detail selection
 
 This means you can validate the project logic even if Nmap is not installed yet.
 
@@ -46,10 +48,14 @@ python -m guinmap.main
 What to check:
 - the window opens without crashing
 - the main sections render correctly
-- the Scan Builder, Nmap Families, Execution, Results, and Runtime panels are visible
+- the Scan Builder, Operator Preferences, Execution, Results, and Runtime panels are visible
+- the advanced Nmap families panel starts hidden and appears after pressing the reveal control
 - the command preview updates after pressing `Preview command`
 - the `Run scan` button stays disabled when Nmap is not available
+- the `Cancel scan` button is only enabled while a scan is active
 - `Load latest XML` works even before a real scan exists, thanks to the sample fallback
+- changing the language preference to Spanish and reopening the window switches visible labels to Spanish
+- selecting a result row updates the host, port, scripts, and metadata detail panels
 
 ### 4. Run a real smoke test with Nmap installed
 
@@ -137,9 +143,13 @@ What to check:
 - a valid profile produces a readable command preview
 - grouped family fields appear in the preview when populated
 - advanced arguments appear in the preview exactly as intended
+- saved preferences update the configured binary and output directories after reload
+- the selected language is restored after reopening the window
 - the UI stays responsive while a real scan is running
+- a running scan can be cancelled and returns the execution panel to a usable state
 - results populate from XML after the scan completes
 - loading an XML file updates the results table without launching a scan
+- selecting a row updates the detail cards with real host, script, and metadata content
 - exporting current reports writes both JSON and Markdown outputs
 
 ## Practical review checklist
@@ -147,9 +157,14 @@ What to check:
 - Does the generated command match the selected profile?
 - Can unusual Nmap combinations still be expressed through advanced arguments?
 - Can XML artifacts be loaded and reviewed without rerunning a scan?
+- Can saved preferences be reloaded and applied without restarting the app?
+- Does the language preference reopen the window in the expected language?
+- Are advanced controls hidden until explicitly requested so the first screen stays focused?
+- Can an active scan be cancelled cleanly without freezing the window?
 - Does the XML file exist when the scan finishes?
 - Does a non-zero Nmap exit code produce a clear error?
 - Do parsed hosts and ports preserve exact Nmap states like `open|filtered`?
 - Do exported reports preserve the important scan metadata and nested result details?
+- Does selecting a result row expose the expected host, port, script, and metadata detail?
 - Does environment diagnostics explain missing Nmap, privileges, or fallback behavior clearly?
 - Does the UI still open after backend changes?

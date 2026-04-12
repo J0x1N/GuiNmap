@@ -1,5 +1,6 @@
 """Domain models for GuiNmap."""
 
+from guinmap.domain.app_settings import AppSettings
 from guinmap.domain.scan_profile import ScanProfile
 from guinmap.domain.scan_result import (
 	ExtraportsSummary,
@@ -11,6 +12,7 @@ from guinmap.domain.scan_result import (
 )
 
 __all__ = [
+	"AppSettings",
 	"ExtraportsSummary",
 	"HostResult",
 	"PortResult",
